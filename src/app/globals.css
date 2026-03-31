@@ -1,0 +1,64 @@
+/**
+ * Global Styles & Tailwind Setup
+ * --------------------------------
+ * Imports Tailwind CSS layers. Adds custom CSS variables
+ * and base styles for the CodeSensei application.
+ */
+
+@import "tailwindcss";
+
+/* ---- Custom scrollbar for a polished look ---- */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* ---- Smooth scrolling globally ---- */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ---- Base body styling ---- */
+body {
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Transition helper for theme switching ---- */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* ---- Mermaid diagram containers ---- */
+.mermaid {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+/* ---- Code block styling ---- */
+pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+code {
+  font-family: "Fira Code", "Cascadia Code", monospace;
+}
