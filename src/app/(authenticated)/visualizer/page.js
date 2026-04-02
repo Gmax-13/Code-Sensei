@@ -48,13 +48,17 @@ export default function VisualizerPage() {
 
     /** Auto-play through steps */
     useEffect(() => {
-        if (isPlaying && currentStep < steps.length - 1) {
-            timerRef.current = setTimeout(() => {
-                setCurrentStep((prev) => prev + 1);
-            }, speed);
-        } else if (currentStep >= steps.length - 1) {
-            setIsPlaying(false);
+        if (!isPlaying) return;
+        
+        if (currentStep >= steps.length - 1) {
+            // Stop when reaching the end - use setTimeout to avoid direct setState in effect body
+            const stopTimer = setTimeout(() => setIsPlaying(false), 0);
+            return () => clearTimeout(stopTimer);
         }
+        
+        timerRef.current = setTimeout(() => {
+            setCurrentStep((prev) => prev + 1);
+        }, speed);
 
         return () => clearTimeout(timerRef.current);
     }, [isPlaying, currentStep, steps.length, speed]);

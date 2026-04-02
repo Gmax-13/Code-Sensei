@@ -9,6 +9,7 @@
 import "./globals.css";
 import QueryProvider from "@/components/providers/QueryProvider";
 import ThemeProvider from "@/components/providers/ThemeProvider";
+import { SidebarProvider } from "@/components/providers/SidebarProvider";
 
 /** Metadata for SEO and browser tab */
 export const metadata = {
@@ -30,7 +31,9 @@ export default function RootLayout({ children }) {
       <body className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <ThemeProvider>
           <QueryProvider>
-            {children}
+            <SidebarProvider>
+              {children}
+            </SidebarProvider>
           </QueryProvider>
         </ThemeProvider>
       </body>
