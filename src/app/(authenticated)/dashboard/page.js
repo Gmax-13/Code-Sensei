@@ -34,6 +34,20 @@ const FEATURES = [
         color: "from-emerald-500 to-emerald-700",
     },
     {
+        title: "Format Converter",
+        description: "Convert between Markdown, LaTeX, HTML, Plain Text, JSON, and CSV with a two-column editor.",
+        icon: "🔄",
+        href: "/converter",
+        color: "from-cyan-500 to-cyan-700",
+    },
+    {
+        title: "Viva / Interview Mode",
+        description: "AI-powered interview preparation. Generate questions, get code explanations, and practice for vivas.",
+        icon: "🎓",
+        href: "/viva",
+        color: "from-pink-500 to-pink-700",
+    },
+    {
         title: "Settings",
         description: "Manage your profile, customize preferences, and configure your CodeSensei experience.",
         icon: "⚙️",
@@ -62,7 +76,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
                     <p className="text-sm text-gray-500 dark:text-gray-400">Available Tools</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">4</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">6</p>
                 </div>
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
                     <p className="text-sm text-gray-500 dark:text-gray-400">Algorithms</p>

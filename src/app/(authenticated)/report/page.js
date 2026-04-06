@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { useGenerateReport } from "@/hooks/useApi";
+import axios from "axios";
 
 /** List of supported languages for the dropdown */
 const LANGUAGES = [
@@ -26,6 +27,7 @@ export default function ReportPage() {
 
     // Generated report state
     const [report, setReport] = useState(null);
+    const [exporting, setExporting] = useState(null);
 
     // TanStack Query mutation hook
     const generateReport = useGenerateReport();
@@ -43,6 +45,48 @@ export default function ReportPage() {
             setReport(result);
         } catch (err) {
             console.error("Report generation failed:", err);
+        }
+    };
+
+    /** Handle exporting the report to a specific format */
+    const handleExport = async (format) => {
+        if (!report) return;
+        setExporting(format);
+
+        try {
+            const endpoints = {
+                pdf: "/api/convert/pdf",
+                docx: "/api/convert/docx",
+                markdown: "/api/convert/markdown",
+                latex: "/api/convert/latex",
+                image: "/api/convert/image",
+            };
+
+            const res = await axios.post(endpoints[format], report, {
+                responseType: "blob",
+            });
+
+            const extensions = {
+                pdf: ".pdf",
+                docx: ".docx",
+                markdown: ".md",
+                latex: ".tex",
+                image: ".svg",
+            };
+
+            const blob = new Blob([res.data]);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${report.title || "report"}${extensions[format]}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error(`Export to ${format} failed:`, err);
+        } finally {
+            setExporting(null);
         }
     };
 
@@ -137,6 +181,33 @@ export default function ReportPage() {
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-3">
                         {report.title}
                     </h2>
+
+                    {/* Export buttons */}
+                    <div className="flex flex-wrap gap-2">
+                        {[
+                            { format: "pdf", label: "PDF", icon: "📕" },
+                            { format: "docx", label: "DOCX", icon: "📘" },
+                            { format: "markdown", label: "Markdown", icon: "📝" },
+                            { format: "latex", label: "LaTeX", icon: "📐" },
+                            { format: "image", label: "SVG Image", icon: "🖼️" },
+                        ].map(({ format, label, icon }) => (
+                            <button
+                                key={format}
+                                onClick={() => handleExport(format)}
+                                disabled={exporting !== null}
+                                className="px-3 py-1.5 text-xs font-medium rounded-lg
+                                    bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300
+                                    hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600
+                                    dark:hover:text-blue-400 border border-gray-200 dark:border-gray-600
+                                    transition-all duration-200
+                                    disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {exporting === format
+                                    ? "⏳ Exporting..."
+                                    : `${icon} Export ${label}`}
+                            </button>
+                        ))}
+                    </div>
 
                     {/* Aim Section */}
                     <ReportSection title="Aim" content={report.aim} />
