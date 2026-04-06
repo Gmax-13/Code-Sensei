@@ -19,6 +19,8 @@ const PAGE_TITLES = {
     "/report": "Report Generator",
     "/visualizer": "DSA Visualizer",
     "/architecture": "Architecture Viewer",
+    "/converter": "Format Converter",
+    "/viva": "Viva / Interview Mode",
     "/settings": "Settings",
 };
 
