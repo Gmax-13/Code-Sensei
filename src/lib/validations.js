@@ -75,3 +75,61 @@ export const diagramSchema = z.object({
         .optional()
         .default("javascript"),
 });
+
+/** Schema for viva question generation */
+export const vivaGenerateSchema = z.object({
+    code: z
+        .string()
+        .min(1, "Code is required")
+        .max(50000, "Input too large"),
+    language: z
+        .string()
+        .optional()
+        .default("javascript"),
+    difficulty: z
+        .enum(["easy", "medium", "hard"])
+        .optional()
+        .default("medium"),
+});
+
+/** Schema for viva follow-up generation */
+export const vivaFollowupSchema = z.object({
+    question: z
+        .string()
+        .min(1, "Original question is required"),
+    answer: z
+        .string()
+        .optional()
+        .default(""),
+    code: z
+        .string()
+        .optional()
+        .default(""),
+    difficulty: z
+        .enum(["easy", "medium", "hard"])
+        .optional()
+        .default("medium"),
+});
+
+/** Schema for viva code explanation */
+export const vivaExplainSchema = z.object({
+    code: z
+        .string()
+        .min(1, "Code is required")
+        .max(50000, "Input too large"),
+    language: z
+        .string()
+        .optional()
+        .default("javascript"),
+});
+
+/** Schema for general format conversion */
+export const formatConvertSchema = z.object({
+    content: z
+        .string()
+        .min(1, "Content is required"),
+    from: z
+        .enum(["markdown", "latex", "html", "txt", "json", "csv"]),
+    to: z
+        .enum(["markdown", "latex", "html", "txt", "json", "csv"]),
+});

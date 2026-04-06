@@ -70,3 +70,72 @@ export function useExecuteDSA() {
         },
     });
 }
+
+/**
+ * Hook for generating viva/interview questions from code.
+ * @returns {UseMutationResult}
+ */
+export function useVivaGenerate() {
+    return useMutation({
+        mutationFn: async ({ code, language, difficulty }) => {
+            const res = await axios.post("/api/viva/generate", {
+                code,
+                language,
+                difficulty,
+            });
+            return res.data.data.questions;
+        },
+    });
+}
+
+/**
+ * Hook for generating viva follow-up questions.
+ * @returns {UseMutationResult}
+ */
+export function useVivaFollowup() {
+    return useMutation({
+        mutationFn: async ({ question, answer, code, difficulty }) => {
+            const res = await axios.post("/api/viva/followup", {
+                question,
+                answer,
+                code,
+                difficulty,
+            });
+            return res.data.data.followup;
+        },
+    });
+}
+
+/**
+ * Hook for generating code explanations.
+ * @returns {UseMutationResult}
+ */
+export function useVivaExplain() {
+    return useMutation({
+        mutationFn: async ({ code, language }) => {
+            const res = await axios.post("/api/viva/explain", {
+                code,
+                language,
+            });
+            return res.data.data.explanation;
+        },
+    });
+}
+
+/**
+ * Hook for converting between text formats.
+ * @returns {UseMutationResult}
+ */
+export function useFormatConvert() {
+    return useMutation({
+        mutationFn: async ({ content, from, to }) => {
+            const res = await axios.post("/api/convert/format", {
+                content,
+                from,
+                to,
+            });
+            return res.data.data;
+        },
+    });
+}
+
