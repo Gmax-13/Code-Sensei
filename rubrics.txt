@@ -1,0 +1,43 @@
+Criteria	Description	Marks	CO	Mapped POs
+1. Problem Understanding & Requirement Analysis	Clarity of problem statement, user needs, scope definition	10	CO1	PO2
+2. UI/UX Design	User-friendly interface, layout, navigation, responsiveness, usability principles	15	CO1	PO3, PO4, PO5, PO9
+3. Frontend Implementation (Next.js)	Component structure, routing, state management, SSR usage	15	CO2	PO3, PO5
+4. Backend Development (Node.js, Express)	API design, routing, middleware usage, server logic	15	CO3	PO3, PO5
+5. Database Integration (MongoDB)	Schema design, queries, CRUD operations	10	CO3	PO2, PO5
+6. Security Implementation	Authentication (JWT), input validation, secure APIs	10	CO4	PO6, PO7
+7. System Design & Scalability	Modular design, code structure, performance considerations	10	CO4	PO3, PO11
+8. Testing & Debugging	Error handling, testing cases, debugging practices	5	CO3	PO4
+9. Presentation & Communication	Demo clarity, explanation, teamwork communication	5	CO1/CO2	PO9
+10. Innovation & Creativity	Unique features, real-world relevance	5	CO4	PO6
+________________________________________
+🔹 Performance Levels (for each criterion)
+Level	Description
+Excellent (8–10 / 13–15)	Complete, optimized, industry-level implementation
+Good (6–7 / 10–12)	Mostly correct, minor issues
+Average (4–5 / 6–9)	Basic implementation, lacks depth
+Poor (0–3 / 0–5)	Incomplete or incorrect
+________________________________________
+🔹 CO–PO Coverage Summary
+CO	POs Covered via Project
+CO1	PO2, PO3, PO4, PO5, PO9
+CO2	PO3, PO5
+CO3	PO2, PO3, PO4, PO5
+CO4	PO3, PO5, PO6, PO7, PO11
+
+
+ Course Objectives: 
+1. To foster a deep understanding of UI/UX design principles and their application in creating user- centered web experiences. 
+2. To assist in developing proficiency in frontend development using React.js, including state management, routing, and component-based architecture. 
+3. To equip students to build robust and scalable backend applications using Node.js, Express.js, and MongoDB, mastering API design, data modeling, and advanced query techniques within the NoSQL paradigm. 
+4. To direct students to System design practices and cybersecurity practices. 
+
+ Program Outcomes addressed: 
+1. PO2: Problemanalysis 
+2. PO3: Design/Development of Solutions 
+3. PO4: Conduct investigations of complex problems 
+4. PO5: Engineering tool usage 
+5. PO6: The Engineer and The World 
+6. PO7: Ethics 
+7. PO9: Communication 
+8. PO 11: Life-long learning 
+
