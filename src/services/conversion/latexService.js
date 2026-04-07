@@ -3,6 +3,7 @@
  * -------------------------
  * Converts a structured report JSON into a LaTeX document string.
  * Pure function with no external dependencies.
+ * Supports dynamic sections[] format from AI-generated reports.
  */
 
 /**
@@ -65,45 +66,49 @@ export function convertToLatex(report) {
     lines.push("\\maketitle");
     lines.push("");
 
-    // Aim
-    lines.push("\\section{Aim}");
-    lines.push(escapeLatex(report.aim));
-    lines.push("");
+    // ── Dynamic Sections ──
+    if (report.sections && Array.isArray(report.sections)) {
+        for (const section of report.sections) {
+            lines.push(`\\section{${escapeLatex(section.header)}}`);
+            lines.push(escapeLatex(section.content));
+            lines.push("");
+        }
+    } else {
+        // Legacy format fallback
+        lines.push("\\section{Aim}");
+        lines.push(escapeLatex(report.aim));
+        lines.push("");
 
-    // Theory
-    lines.push("\\section{Theory}");
-    lines.push(escapeLatex(report.theory));
-    lines.push("");
+        lines.push("\\section{Theory}");
+        lines.push(escapeLatex(report.theory));
+        lines.push("");
 
-    // Procedure
-    if (report.procedure && report.procedure.length > 0) {
-        lines.push("\\section{Procedure}");
-        lines.push("\\begin{enumerate}");
-        report.procedure.forEach((step) => {
-            lines.push(`  \\item ${escapeLatex(step)}`);
-        });
-        lines.push("\\end{enumerate}");
+        if (report.procedure && report.procedure.length > 0) {
+            lines.push("\\section{Procedure}");
+            lines.push("\\begin{enumerate}");
+            report.procedure.forEach((step) => {
+                lines.push(`  \\item ${escapeLatex(step)}`);
+            });
+            lines.push("\\end{enumerate}");
+            lines.push("");
+        }
+
+        if (report.code) {
+            lines.push("\\section{Code}");
+            lines.push(`\\begin{lstlisting}[language=${lang}]`);
+            lines.push(report.code);
+            lines.push("\\end{lstlisting}");
+            lines.push("");
+        }
+
+        lines.push("\\section{Result}");
+        lines.push(escapeLatex(report.result));
+        lines.push("");
+
+        lines.push("\\section{Conclusion}");
+        lines.push(escapeLatex(report.conclusion));
         lines.push("");
     }
-
-    // Code
-    if (report.code) {
-        lines.push("\\section{Code}");
-        lines.push(`\\begin{lstlisting}[language=${lang}]`);
-        lines.push(report.code);
-        lines.push("\\end{lstlisting}");
-        lines.push("");
-    }
-
-    // Result
-    lines.push("\\section{Result}");
-    lines.push(escapeLatex(report.result));
-    lines.push("");
-
-    // Conclusion
-    lines.push("\\section{Conclusion}");
-    lines.push(escapeLatex(report.conclusion));
-    lines.push("");
 
     lines.push("\\end{document}");
 

@@ -4,6 +4,7 @@
  * Generates an SVG representation of a structured report
  * suitable for rendering or downloading as an image.
  * No external dependencies — produces SVG as a string.
+ * Supports dynamic sections[] format from AI-generated reports.
  */
 
 /**
@@ -22,6 +23,18 @@ function escapeXml(text) {
 }
 
 /**
+ * Truncate text to a max length and add ellipsis.
+ * @param {string} text
+ * @param {number} maxLen
+ * @returns {string}
+ */
+function truncate(text, maxLen = 200) {
+    if (!text) return "";
+    const clean = text.replace(/\n/g, " ").trim();
+    return clean.length > maxLen ? clean.slice(0, maxLen) + "..." : clean;
+}
+
+/**
  * Convert a structured report to an SVG image string.
  * Renders a clean summary card of the report sections.
  *
@@ -30,22 +43,29 @@ function escapeXml(text) {
  */
 export function convertToImage(report) {
     const title = escapeXml(report.title || "Untitled Report");
-    const aim = escapeXml((report.aim || "").slice(0, 200));
-    const theory = escapeXml((report.theory || "").slice(0, 200));
-    const result = escapeXml((report.result || "").slice(0, 200));
-    const conclusion = escapeXml((report.conclusion || "").slice(0, 200));
     const lang = escapeXml(report.language || "N/A");
     const dateStr = report.generatedAt
         ? new Date(report.generatedAt).toLocaleDateString()
         : new Date().toLocaleDateString();
 
     const WIDTH = 800;
-    const sections = [
-        { label: "Aim", value: aim },
-        { label: "Theory", value: theory },
-        { label: "Result", value: result },
-        { label: "Conclusion", value: conclusion },
-    ];
+    let sections = [];
+
+    // ── Dynamic Sections ──
+    if (report.sections && Array.isArray(report.sections)) {
+        sections = report.sections.map((s) => ({
+            label: escapeXml(s.header),
+            value: escapeXml(truncate(s.content)),
+        }));
+    } else {
+        // Legacy format fallback
+        sections = [
+            { label: "Aim", value: escapeXml(truncate(report.aim)) },
+            { label: "Theory", value: escapeXml(truncate(report.theory)) },
+            { label: "Result", value: escapeXml(truncate(report.result)) },
+            { label: "Conclusion", value: escapeXml(truncate(report.conclusion)) },
+        ];
+    }
 
     let y = 100;
     let sectionsSvg = "";

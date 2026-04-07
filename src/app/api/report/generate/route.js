@@ -1,7 +1,8 @@
 /**
  * POST /api/report/generate
  * ---------------------------
- * Generate a structured practical report from code input.
+ * Generate a structured practical report using Groq AI.
+ * Accepts title, language, custom headers, and optional source code.
  * Protected endpoint — requires authentication.
  */
 
@@ -21,13 +22,19 @@ async function handler(request) {
             return errorResponse(message, 400);
         }
 
-        // 2. Generate the report using the service layer
-        const report = generateReport(parsed.data);
+        // 2. Generate the report using the AI-powered service
+        const report = await generateReport(parsed.data);
 
         return successResponse({ report });
     } catch (error) {
         console.error("Report generation error:", error);
-        return errorResponse("Failed to generate report. Please try again.", 500);
+
+        // Provide a more specific error message if available
+        const message = error.message?.includes("GROQ_API_KEY")
+            ? "API key not configured. Please contact the administrator."
+            : "Failed to generate report. Please try again.";
+
+        return errorResponse(message, 500);
     }
 }
 

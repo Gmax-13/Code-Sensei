@@ -3,28 +3,26 @@
  * -----------------------
  * Converts a structured report JSON into a downloadable PDF buffer.
  * Uses pdf-lib for zero-dependency, server-side PDF generation.
+ * Supports dynamic sections[] format from AI-generated reports.
  */
 
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 /**
  * Convert a structured report to a PDF buffer.
+ * Supports both legacy format (aim, theory, etc.) and new sections[] format.
  *
  * @param {Object} report - Structured report object
  * @param {string} report.title
- * @param {string} report.aim
- * @param {string} report.theory
- * @param {string[]} report.procedure
- * @param {string} report.code
- * @param {string} report.result
- * @param {string} report.conclusion
+ * @param {string} report.language
+ * @param {string} report.generatedAt
+ * @param {Array<{header: string, content: string}>} report.sections
  * @returns {Promise<Uint8Array>} PDF file as bytes
  */
 export async function convertToPdf(report) {
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const monoFont = await pdfDoc.embedFont(StandardFonts.Courier);
 
     const PAGE_WIDTH = 595;
     const PAGE_HEIGHT = 842;
@@ -33,7 +31,6 @@ export async function convertToPdf(report) {
     const LINE_HEIGHT = 16;
     const HEADING_SIZE = 16;
     const BODY_SIZE = 11;
-    const CODE_SIZE = 9;
 
     let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     let y = PAGE_HEIGHT - MARGIN;
@@ -97,7 +94,7 @@ export async function convertToPdf(report) {
         }
     }
 
-    // ---- Title ----
+    // ── Title ──
     const titleText = report.title || "Untitled Report";
     page.drawText(titleText, {
         x: MARGIN,
@@ -121,48 +118,54 @@ export async function convertToPdf(report) {
     });
     y -= LINE_HEIGHT * 2;
 
-    // ---- Sections ----
-    const sections = [
-        { heading: "Aim", content: report.aim },
-        { heading: "Theory", content: report.theory },
-    ];
-
-    for (const sec of sections) {
-        drawHeading(sec.heading);
-        drawBody(sec.content);
-    }
-
-    // Procedure (numbered list)
-    if (report.procedure && report.procedure.length > 0) {
-        drawHeading("Procedure");
-        report.procedure.forEach((step, i) => {
-            drawBody(`${i + 1}. ${step}`);
-        });
-    }
-
-    // Code section
-    if (report.code) {
-        drawHeading("Code");
-        const codeLines = report.code.split("\n");
-        for (const codeLine of codeLines) {
-            ensureSpace();
-            const safeText = codeLine.replace(/[^\x20-\x7E]/g, " ");
-            page.drawText(safeText || " ", {
-                x: MARGIN,
-                y,
-                size: CODE_SIZE,
-                font: monoFont,
-                color: rgb(0.2, 0.2, 0.2),
-            });
-            y -= LINE_HEIGHT;
+    // ── Dynamic Sections ──
+    if (report.sections && Array.isArray(report.sections)) {
+        for (const section of report.sections) {
+            drawHeading(section.header);
+            drawBody(section.content);
         }
-    }
+    } else {
+        // Legacy format fallback
+        const legacySections = [
+            { heading: "Aim", content: report.aim },
+            { heading: "Theory", content: report.theory },
+        ];
 
-    // Result + Conclusion
-    drawHeading("Result");
-    drawBody(report.result);
-    drawHeading("Conclusion");
-    drawBody(report.conclusion);
+        for (const sec of legacySections) {
+            drawHeading(sec.heading);
+            drawBody(sec.content);
+        }
+
+        if (report.procedure && report.procedure.length > 0) {
+            drawHeading("Procedure");
+            report.procedure.forEach((step, i) => {
+                drawBody(`${i + 1}. ${step}`);
+            });
+        }
+
+        if (report.code) {
+            drawHeading("Code");
+            const monoFont = await pdfDoc.embedFont(StandardFonts.Courier);
+            const codeLines = report.code.split("\n");
+            for (const codeLine of codeLines) {
+                ensureSpace();
+                const safeText = codeLine.replace(/[^\x20-\x7E]/g, " ");
+                page.drawText(safeText || " ", {
+                    x: MARGIN,
+                    y,
+                    size: 9,
+                    font: monoFont,
+                    color: rgb(0.2, 0.2, 0.2),
+                });
+                y -= LINE_HEIGHT;
+            }
+        }
+
+        drawHeading("Result");
+        drawBody(report.result);
+        drawHeading("Conclusion");
+        drawBody(report.conclusion);
+    }
 
     return await pdfDoc.save();
 }

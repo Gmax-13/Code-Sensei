@@ -17,11 +17,12 @@ import axios from "axios";
  */
 export function useGenerateReport() {
     return useMutation({
-        mutationFn: async ({ code, language, title }) => {
+        mutationFn: async ({ title, language, headers, source_code }) => {
             const res = await axios.post("/api/report/generate", {
-                code,
-                language,
                 title,
+                language,
+                headers,
+                source_code,
             });
             return res.data.data.report;
         },
