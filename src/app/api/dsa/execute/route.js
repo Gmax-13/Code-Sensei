@@ -13,6 +13,10 @@ import {
     mergeSort,
     simulateStack,
     simulateQueue,
+    simulateBinaryTree,
+    binarySearch,
+    bfsGraph,
+    dpLCS,
 } from "@/services/dsaService";
 
 async function handler(request) {
@@ -59,9 +63,41 @@ async function handler(request) {
                 break;
             }
 
+            case "binaryTree": {
+                if (!Array.isArray(operations) || operations.length === 0) {
+                    return errorResponse("An array of tree operations is required.", 400);
+                }
+                result = simulateBinaryTree(operations);
+                break;
+            }
+
+            case "binarySearch": {
+                if (!Array.isArray(data) || data.length === 0 || operations?.target === undefined) {
+                    return errorResponse("Array data and a target property in operations are required for binarySearch.", 400);
+                }
+                result = binarySearch(data.map(Number), Number(operations.target));
+                break;
+            }
+
+            case "bfsGraph": {
+                if (!operations || !operations.graphData || operations.startNode === undefined) {
+                    return errorResponse("Operations must contain graphData and startNode.", 400);
+                }
+                result = bfsGraph(operations.graphData, operations.startNode);
+                break;
+            }
+
+            case "dpLCS": {
+                if (!operations || !operations.str1 || !operations.str2) {
+                    return errorResponse("Operations must contain string str1 and str2.", 400);
+                }
+                result = dpLCS(operations.str1, operations.str2);
+                break;
+            }
+
             default:
                 return errorResponse(
-                    `Unknown algorithm: ${algorithm}. Supported: bubbleSort, mergeSort, stack, queue`,
+                    `Unknown algorithm: ${algorithm}. Supported: bubbleSort, mergeSort, stack, queue, binaryTree, binarySearch, bfsGraph, dpLCS`,
                     400
                 );
         }
