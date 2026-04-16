@@ -3,6 +3,7 @@
  * ----------------------------
  * Converts a structured report JSON into a clean Markdown string.
  * Pure function with no external dependencies.
+ * Supports dynamic sections[] format from AI-generated reports.
  */
 
 /**
@@ -27,49 +28,54 @@ export function convertToMarkdown(report) {
     lines.push("---");
     lines.push("");
 
-    // Aim
-    lines.push("## Aim");
-    lines.push("");
-    lines.push(report.aim || "_No aim provided._");
-    lines.push("");
-
-    // Theory
-    lines.push("## Theory");
-    lines.push("");
-    lines.push(report.theory || "_No theory provided._");
-    lines.push("");
-
-    // Procedure
-    if (report.procedure && report.procedure.length > 0) {
-        lines.push("## Procedure");
+    // ── Dynamic Sections ──
+    if (report.sections && Array.isArray(report.sections)) {
+        for (const section of report.sections) {
+            lines.push(`## ${section.header}`);
+            lines.push("");
+            lines.push(section.content || `_No content for "${section.header}"._`);
+            lines.push("");
+        }
+    } else {
+        // Legacy format fallback
+        lines.push("## Aim");
         lines.push("");
-        report.procedure.forEach((step, i) => {
-            lines.push(`${i + 1}. ${step}`);
-        });
+        lines.push(report.aim || "_No aim provided._");
+        lines.push("");
+
+        lines.push("## Theory");
+        lines.push("");
+        lines.push(report.theory || "_No theory provided._");
+        lines.push("");
+
+        if (report.procedure && report.procedure.length > 0) {
+            lines.push("## Procedure");
+            lines.push("");
+            report.procedure.forEach((step, i) => {
+                lines.push(`${i + 1}. ${step}`);
+            });
+            lines.push("");
+        }
+
+        if (report.code) {
+            lines.push("## Code");
+            lines.push("");
+            lines.push(`\`\`\`${lang}`);
+            lines.push(report.code);
+            lines.push("```");
+            lines.push("");
+        }
+
+        lines.push("## Result");
+        lines.push("");
+        lines.push(report.result || "_No result provided._");
+        lines.push("");
+
+        lines.push("## Conclusion");
+        lines.push("");
+        lines.push(report.conclusion || "_No conclusion provided._");
         lines.push("");
     }
-
-    // Code
-    if (report.code) {
-        lines.push("## Code");
-        lines.push("");
-        lines.push(`\`\`\`${lang}`);
-        lines.push(report.code);
-        lines.push("```");
-        lines.push("");
-    }
-
-    // Result
-    lines.push("## Result");
-    lines.push("");
-    lines.push(report.result || "_No result provided._");
-    lines.push("");
-
-    // Conclusion
-    lines.push("## Conclusion");
-    lines.push("");
-    lines.push(report.conclusion || "_No conclusion provided._");
-    lines.push("");
 
     return lines.join("\n");
 }

@@ -3,6 +3,7 @@
  * -------------------------
  * Converts a structured report JSON into a downloadable DOCX buffer.
  * Uses the `docx` library for rich Word document generation.
+ * Supports dynamic sections[] format from AI-generated reports.
  */
 
 import {
@@ -101,46 +102,53 @@ export async function convertToDocx(report) {
         })
     );
 
-    // Aim
-    children.push(sectionHeading("Aim"));
-    children.push(bodyParagraph(report.aim));
+    // ── Dynamic Sections ──
+    if (report.sections && Array.isArray(report.sections)) {
+        for (const section of report.sections) {
+            children.push(sectionHeading(section.header));
+            // Split content by newlines for multi-paragraph support
+            const paragraphs = (section.content || "").split("\n").filter(Boolean);
+            for (const para of paragraphs) {
+                children.push(bodyParagraph(para));
+            }
+        }
+    } else {
+        // Legacy format fallback
+        children.push(sectionHeading("Aim"));
+        children.push(bodyParagraph(report.aim));
 
-    // Theory
-    children.push(sectionHeading("Theory"));
-    children.push(bodyParagraph(report.theory));
+        children.push(sectionHeading("Theory"));
+        children.push(bodyParagraph(report.theory));
 
-    // Procedure
-    if (report.procedure && report.procedure.length > 0) {
-        children.push(sectionHeading("Procedure"));
-        report.procedure.forEach((step, i) => {
-            children.push(bodyParagraph(`${i + 1}. ${step}`));
-        });
+        if (report.procedure && report.procedure.length > 0) {
+            children.push(sectionHeading("Procedure"));
+            report.procedure.forEach((step, i) => {
+                children.push(bodyParagraph(`${i + 1}. ${step}`));
+            });
+        }
+
+        if (report.code) {
+            children.push(sectionHeading("Code"));
+            children.push(
+                new Paragraph({
+                    spacing: { after: 200 },
+                    children: [
+                        new TextRun({
+                            text: report.code,
+                            font: "Consolas",
+                            size: 18,
+                        }),
+                    ],
+                })
+            );
+        }
+
+        children.push(sectionHeading("Result"));
+        children.push(bodyParagraph(report.result));
+
+        children.push(sectionHeading("Conclusion"));
+        children.push(bodyParagraph(report.conclusion));
     }
-
-    // Code
-    if (report.code) {
-        children.push(sectionHeading("Code"));
-        children.push(
-            new Paragraph({
-                spacing: { after: 200 },
-                children: [
-                    new TextRun({
-                        text: report.code,
-                        font: "Consolas",
-                        size: 18,
-                    }),
-                ],
-            })
-        );
-    }
-
-    // Result
-    children.push(sectionHeading("Result"));
-    children.push(bodyParagraph(report.result));
-
-    // Conclusion
-    children.push(sectionHeading("Conclusion"));
-    children.push(bodyParagraph(report.conclusion));
 
     const doc = new Document({
         sections: [{ children }],
