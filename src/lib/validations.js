@@ -39,18 +39,26 @@ export const loginSchema = z.object({
 
 /** Schema for report generation request */
 export const reportSchema = z.object({
-    code: z
+    title: z
         .string()
-        .min(1, "Code or project description is required")
-        .max(50000, "Input too large"),
+        .min(1, "Report title is required")
+        .max(200, "Title must be at most 200 characters")
+        .trim(),
     language: z
         .string()
         .optional()
         .default("javascript"),
-    title: z
-        .string()
+    headers: z
+        .array(z.string().min(1).max(100))
+        .min(1, "At least one section header is required")
+        .max(20, "Maximum 20 section headers allowed")
         .optional()
-        .default("Untitled Report"),
+        .default(["Aim", "Theory", "Procedure", "Result", "Conclusion"]),
+    source_code: z
+        .string()
+        .max(50000, "Source code too large")
+        .optional()
+        .default(""),
 });
 
 /** Schema for codebase analysis request */
