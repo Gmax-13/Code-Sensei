@@ -62,21 +62,29 @@ export default function ArchitecturePage() {
 
         try {
             const mermaid = (await import("mermaid")).default;
-            // Clear previous content
-            mermaidRef.current.innerHTML = "";
-            // Generate a unique ID for the diagram
+            
+            const currentRef = mermaidRef.current;
+            if (!currentRef) return;
+
             const id = `mermaid-${Date.now()}`;
             const { svg } = await mermaid.render(id, diagramCode);
-            mermaidRef.current.innerHTML = svg;
+
+            // Only update if component has not changed
+            if (mermaidRef.current === currentRef) {
+                currentRef.innerHTML = svg;
+            }
         } catch (err) {
             console.error("Mermaid render error:", err);
             // Show the raw code on render failure
-            mermaidRef.current.innerHTML = `
+            const currentRef = mermaidRef.current;
+            if (currentRef) {
+                currentRef.innerHTML = `
         <div class="text-red-400 text-sm p-4">
           <p class="font-bold mb-2">Diagram render failed</p>
           <pre class="bg-gray-900 p-3 rounded text-xs overflow-x-auto">${diagramCode}</pre>
         </div>
       `;
+            }
         }
     }, [mermaidReady, diagrams, activeDiagram, rawMode]);
 
@@ -217,6 +225,7 @@ export default function ArchitecturePage() {
                     ) : (
                         /* Rendered Mermaid diagram */
                         <div
+                            key={activeDiagram + (rawMode ? "raw" : "render")}
                             ref={mermaidRef}
                             className="min-h-[200px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 rounded-lg p-4 overflow-x-auto"
                         >
