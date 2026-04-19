@@ -7,6 +7,7 @@ import Timeline from "../_components/Timeline";
 import PlaybackControls from "../_components/PlaybackControls";
 import AIAnnotationBadge from "../_components/AIAnnotationBadge";
 import SortRenderer from "../_renderers/SortRenderer";
+import MergeSortRenderer from "../_renderers/MergeSortRenderer";
 import StackRenderer from "../_renderers/StackRenderer";
 import QueueRenderer from "../_renderers/QueueRenderer";
 import TreeRenderer from "../_renderers/TreeRenderer";
@@ -23,10 +24,21 @@ const DSA_ALGORITHMS = [
     { value: "queue", label: "Queue", type: "ds" }
 ];
 
+/** Pre-filled sample inputs for each algorithm — shown immediately on page load and on tab switch */
+const ALGORITHM_DEFAULTS = {
+    bubbleSort:  "64, 34, 25, 12, 22, 11, 90",
+    mergeSort:   "38, 27, 43, 3, 9, 82, 10",
+    binaryTree:  "50\n30\n70\n20\n40\n60\n80",
+    bfsGraph:    "(uses built-in sample graph — A→B, A→C, B→D, C→E)",
+    dpLCS:       "ABCBDAB, BDCAB",
+    stack:       "push 10\npush 20\npush 30\npop\npush 40",
+    queue:       "enqueue 1\nenqueue 2\nenqueue 3\ndequeue\nenqueue 4",
+};
+
 export default function DSAEngine() {
     const [algorithm, setAlgorithm] = useState("bubbleSort");
-    const [input, setInput] = useState("64, 34, 25, 12, 22, 11, 90");
-    const [steps, setSteps] = useState([]);
+    const [input, setInput]         = useState(ALGORITHM_DEFAULTS["bubbleSort"]);
+    const [steps, setSteps]         = useState([]);
     
     const execute = useExecuteDSA();
     const timeline = useTimeline(steps);
@@ -79,7 +91,11 @@ export default function DSAEngine() {
                 <div className="flex flex-wrap gap-2">
                     {DSA_ALGORITHMS.map(algo => (
                         <button key={algo.value}
-                            onClick={() => { setAlgorithm(algo.value); setSteps([]); setInput(""); }}
+                            onClick={() => {
+                                setAlgorithm(algo.value);
+                                setSteps([]);
+                                setInput(ALGORITHM_DEFAULTS[algo.value] || "");
+                            }}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${algorithm === algo.value ? "bg-blue-600 text-white shadow-md shadow-blue-500/20" : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"}`}
                         >
                             {algo.label}
@@ -117,17 +133,31 @@ export default function DSAEngine() {
             {steps.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 flex flex-col shadow-lg">
                     
-                    <div className="flex-1 flex items-center justify-center min-h-[300px] mb-4 relative overflow-hidden rounded-xl border border-gray-100 dark:border-gray-700/50">
-                        {algorithm.includes("Sort") && <SortRenderer step={timeline.stepData} />}
-                        {algorithm === "stack" && <StackRenderer step={timeline.stepData} />}
-                        {algorithm === "queue" && <QueueRenderer step={timeline.stepData} />}
-                        {algorithm === "binaryTree" && <TreeRenderer step={timeline.stepData} />}
-                        {algorithm === "bfsGraph" && <GraphRenderer step={timeline.stepData} />}
-                        {algorithm === "dpLCS" && <DPTableRenderer step={timeline.stepData} />}
+                    {/* Visualization Canvas — overflow-auto for tree/merge scroll */}
+                    <div className="relative w-full h-96 overflow-auto rounded-xl border border-gray-800 mb-4">
+                        {algorithm === "bubbleSort" && <SortRenderer step={timeline.stepData} />}
+                        {algorithm === "mergeSort"  && (
+                            <MergeSortRenderer
+                                step={timeline.stepData}
+                                allSteps={steps}
+                                currentStepIdx={timeline.currentStep}
+                            />
+                        )}
+                        {algorithm === "stack"       && <StackRenderer step={timeline.stepData} />}
+                        {algorithm === "queue"       && <QueueRenderer step={timeline.stepData} />}
+                        {algorithm === "binaryTree"  && <TreeRenderer step={timeline.stepData} />}
+                        {algorithm === "bfsGraph"    && <GraphRenderer step={timeline.stepData} />}
+                        {algorithm === "dpLCS"       && <DPTableRenderer step={timeline.stepData} />}
                     </div>
 
-                    <div className="text-sm text-gray-800 dark:text-gray-200 font-medium mb-2 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 rounded-lg border border-blue-100 dark:border-blue-800/30">
-                        {timeline.stepData?.description}
+                    {/* Step description — accent bar on left, monospaced step number */}
+                    <div className="flex items-start gap-3 px-4 py-3 bg-gray-800/60 rounded-lg border-l-4 border-blue-500 mb-1">
+                        <span className="text-[11px] font-mono text-blue-400 shrink-0 mt-0.5">
+                            {String(timeline.currentStep + 1).padStart(2, "0")}/{timeline.totalSteps}
+                        </span>
+                        <p className="text-sm text-gray-200 font-medium leading-relaxed">
+                            {timeline.stepData?.description}
+                        </p>
                     </div>
 
                     <AIAnnotationBadge annotation={annotation} isLoading={isLoading} />

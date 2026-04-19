@@ -6,7 +6,7 @@
  */
 
 import { withAuth } from "@/lib/middleware";
-import { errorResponse } from "@/lib/apiResponse";
+import { errorResponse, sanitizeFilename } from "@/lib/apiResponse";
 import { convertToMarkdown } from "@/services/conversion/markdownService";
 
 async function handler(request) {
@@ -23,7 +23,7 @@ async function handler(request) {
             status: 200,
             headers: {
                 "Content-Type": "text/markdown; charset=utf-8",
-                "Content-Disposition": `attachment; filename="${body.title || "report"}.md"`,
+                "Content-Disposition": `attachment; filename="${sanitizeFilename(body.title)}.md"`,
             },
         });
     } catch (error) {

@@ -1,56 +1,44 @@
 /**
  * Follow-up Generator Service
  * -----------------------------
- * Generates follow-up questions based on a previous question
- * and the student's answer (or lack thereof).
- * Uses the pluggable LLM client.
+ * Generates follow-up questions based on a student's answer.
+ * Deliberately token-conservative: does NOT resend the full code
+ * (the question itself carries enough context).
+ *
+ * Token budget: 350 max_tokens
  */
 
-import { llmCompleteJSON } from "./llmClient";
+import { generateStructured } from "@/lib/groqClient";
 
 /**
- * Generate follow-up questions from a prior question and answer.
+ * Generate follow-up questions from a prior Q&A exchange.
  *
  * @param {Object} params
- * @param {string} params.question - The original question that was asked
- * @param {string} params.answer - The student's answer (optional)
- * @param {string} params.code - Original code context (optional)
+ * @param {string} params.question   - The original question
+ * @param {string} params.answer     - Student's answer (may be empty)
  * @param {string} params.difficulty - "easy" | "medium" | "hard"
- * @returns {Promise<Object>} Follow-up questions
+ * @returns {Promise<Object>} { followUpQuestions, hint, evaluation }
  */
-export async function generateFollowups({ question, answer = "", code = "", difficulty = "medium" }) {
-    const systemPrompt = `You are a senior CS professor conducting a follow-up in a viva/interview.
-Based on the student's answer to a previous question, generate probing follow-up questions.
-Your tone is professional and encouraging but rigorous.
+export async function generateFollowups({ question, answer = "", difficulty = "medium" }) {
+    const answerQuality = answer.trim().length < 20 ? "incomplete/missing" : "provided";
 
-Difficulty: ${difficulty.toUpperCase()}
-
-Respond with valid JSON:
+    const systemPrompt = `You are a CS professor doing a follow-up viva. The student's answer was ${answerQuality}.
+Respond ONLY with valid JSON:
 {
-  "followUpQuestions": ["...", "...", "..."],
-  "hint": "A brief hint if the student seems stuck",
-  "evaluation": "brief" | "good" | "excellent"
+  "followUpQuestions": ["q1","q2","q3"],
+  "hint":              "one helpful nudge if answer was weak, else empty string",
+  "evaluation":        "brief" | "good" | "excellent"
 }
+If answer was weak/missing: ask simpler clarifying questions. If strong: push into edge-cases & optimisations.`;
 
-Rules:
-- Generate 3 follow-up questions
-- Make them progressively deeper
-- If the answer is empty or weak, ask simpler clarifying questions
-- If the answer is strong, push into edge cases and optimizations`;
+    const userPrompt = `Question: ${question}\nStudent answer: ${answer || "(no answer given)"}`;
 
-    const userPrompt = `Previous question: ${question}
-
-Student's answer: ${answer || "(No answer provided)"}
-
-${code ? `Code context:\n\`\`\`\n${code}\n\`\`\`` : ""}
-
-Generate follow-up questions.`;
-
-    const result = await llmCompleteJSON(systemPrompt, userPrompt);
+    const rawJson = await generateStructured(systemPrompt, userPrompt, { max_tokens: 350 });
+    const result  = JSON.parse(rawJson);
 
     return {
         followUpQuestions: result.followUpQuestions || [],
-        hint: result.hint || "",
-        evaluation: result.evaluation || "brief",
+        hint:              result.hint              || "",
+        evaluation:        result.evaluation        || "brief",
     };
 }

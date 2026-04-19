@@ -9,7 +9,7 @@ import { withAuth } from "@/lib/middleware";
 import { errorResponse, successResponse } from "@/lib/apiResponse";
 import { generateFollowups } from "@/services/viva/followupGenerator";
 
-async function handler(request) {
+async function handler(request, context, user) {
     try {
         const body = await request.json();
         const { question, answer, code, difficulty } = body;

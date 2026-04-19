@@ -18,7 +18,6 @@ fibonacci(4);`;
 
 export default function TracerEngine() {
     const [code, setCode] = useState(SAMPLE_CODE);
-    const [language, setLanguage] = useState("javascript");
     
     // API Hook
     const { frames, isAnalyzing, error, analyzeCode } = useTracerExecution();
@@ -27,7 +26,7 @@ export default function TracerEngine() {
     const timeline = useTimeline(frames);
 
     const handleAnalyze = () => {
-        analyzeCode(code, language);
+        analyzeCode(code, "javascript");
     };
 
     const currentFrame = timeline.stepData;
@@ -38,21 +37,16 @@ export default function TracerEngine() {
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-col shadow-sm max-h-[800px]">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Source Code</h2>
-                    <select 
-                        value={language} 
-                        onChange={e => setLanguage(e.target.value)}
-                        className="text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 outline-none rounded px-3 py-1.5 focus:border-purple-500"
-                    >
-                        <option value="javascript">JavaScript</option>
-                        <option value="python">Python</option>
-                    </select>
+                    <span className="text-[10px] font-mono px-2 py-1 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded">
+                        AI auto-detects language
+                    </span>
                 </div>
                 
                 <div className="flex-1 overflow-hidden">
                     <CodeMirrorEditor 
                         value={code} 
                         onChange={setCode} 
-                        language={language}
+                        language="javascript"
                         readOnly={frames.length > 0 && timeline.currentStep > 0} 
                         highlightLine={currentFrame?.line}
                     />
@@ -86,7 +80,7 @@ export default function TracerEngine() {
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400 opacity-60">
                         <span className="text-5xl mb-4 grayscale">🧭</span>
                         <p className="text-lg font-medium text-gray-600 dark:text-gray-300">Execution Map Empty</p>
-                        <p className="text-sm text-center max-w-sm mt-2">Write some code, select the language, and let Gemini 2.5 Flash build a visual execution timeline.</p>
+                        <p className="text-sm text-center max-w-sm mt-2">Paste any code and let Gemini 2.5 Flash build a visual execution timeline.</p>
                     </div>
                 ) : (
                     <div className="flex flex-col h-full gap-4">

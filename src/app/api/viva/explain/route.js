@@ -9,7 +9,7 @@ import { withAuth } from "@/lib/middleware";
 import { errorResponse, successResponse } from "@/lib/apiResponse";
 import { explainCode } from "@/services/viva/codeExplainer";
 
-async function handler(request) {
+async function handler(request, context, user) {
     try {
         const body = await request.json();
         const { code, language } = body;

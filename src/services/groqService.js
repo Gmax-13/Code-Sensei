@@ -7,6 +7,10 @@
  */
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// NOTE: llama-3.3-70b-versatile has 100k tokens/day on the free tier.
+// Use this model only for report generation where quality matters.
+// For all other AI features, use groqClient.js (llama-3.1-8b-instant, 500k/day).
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 /**
@@ -40,7 +44,9 @@ export async function callGroq(systemPrompt, userPrompt, options = {}) {
                 { role: "user", content: userPrompt },
             ],
             temperature: options.temperature ?? 0.7,
-            max_tokens: options.max_tokens ?? 4096,
+            // Default 2048: a 5-section report is ~1000-1400 output tokens.
+            // 2048 gives headroom without burning the 100k/day free tier budget.
+            max_tokens: options.max_tokens ?? 2048,
             response_format: { type: "json_object" },
         }),
     });

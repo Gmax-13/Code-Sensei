@@ -40,3 +40,23 @@ export function errorResponse(message, status = 400) {
         { status }
     );
 }
+
+/**
+ * Sanitize a string for safe use in an HTTP Content-Disposition filename.
+ * Removes characters that can malform the header:
+ *   - Double quotes  → would break filename="..." syntax
+ *   - Slashes        → interpreted as path separators
+ *   - Control chars  → 0x00–0x1f, illegal in header values
+ *
+ * @param {string} name - Raw filename (without extension)
+ * @param {string} fallback - Used when result is empty after sanitization
+ * @returns {string} Safe filename string
+ */
+export function sanitizeFilename(name, fallback = "report") {
+    if (!name || typeof name !== "string") return fallback;
+    const safe = name
+        .replace(/["\\/\r\n]/g, "")                   // quotes, slashes, newlines
+        .replace(/[\x00-\x1f\x7f]/g, "")              // ASCII control chars
+        .trim();
+    return safe.length > 0 ? safe : fallback;
+}

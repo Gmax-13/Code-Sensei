@@ -6,7 +6,7 @@
  */
 
 import { withAuth } from "@/lib/middleware";
-import { errorResponse } from "@/lib/apiResponse";
+import { errorResponse, sanitizeFilename } from "@/lib/apiResponse";
 import { convertToLatex } from "@/services/conversion/latexService";
 
 async function handler(request) {
@@ -23,7 +23,7 @@ async function handler(request) {
             status: 200,
             headers: {
                 "Content-Type": "application/x-latex; charset=utf-8",
-                "Content-Disposition": `attachment; filename="${body.title || "report"}.tex"`,
+                "Content-Disposition": `attachment; filename="${sanitizeFilename(body.title)}.tex"`,
             },
         });
     } catch (error) {

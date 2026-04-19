@@ -1,85 +1,65 @@
 /**
  * Question Generator Service
  * ---------------------------
- * Generates structured interview/viva questions from code input.
- * Uses the pluggable LLM client — works with mock by default,
- * or any configured LLM provider.
+ * Generates structured interview/viva questions AND model answers in one Groq call.
+ *
+ * Token budget: 1400 max_tokens
+ *   - 10 questions (5+3+2) × ~15 words = ~150 tokens
+ *   - 10 answers × ~40 words           = ~500 tokens
+ *   - JSON structure overhead           = ~100 tokens
+ * Input cap: 3000 chars.
  */
 
-import { llmCompleteJSON } from "./llmClient";
+import { generateStructured } from "@/lib/groqClient";
+
+const MAX_CODE_CHARS = 3000;
 
 /**
- * Generate viva/interview questions from code.
+ * Generate viva/interview questions with model answers from code.
  *
  * @param {Object} params
- * @param {string} params.code - Source code to question about
- * @param {string} params.language - Programming language (optional)
- * @param {string} params.difficulty - "easy" | "medium" | "hard" (default "medium")
- * @returns {Promise<Object>} Structured question set
+ * @param {string} params.code       - Source code to question about
+ * @param {string} params.difficulty - "easy" | "medium" | "hard"
+ * @returns {Promise<Object>} Structured question+answer set
  */
-export async function generateQuestions({ code, language = "javascript", difficulty = "medium" }) {
-    const systemPrompt = buildSystemPrompt(difficulty);
-    const userPrompt = buildUserPrompt(code, language, difficulty);
+export async function generateQuestions({ code, difficulty = "medium" }) {
+    const snippet = code.slice(0, MAX_CODE_CHARS);
 
-    const result = await llmCompleteJSON(systemPrompt, userPrompt);
-
-    // Ensure proper structure even if LLM returns partial data
-    return {
-        mainQuestions: result.mainQuestions || [],
-        followUpQuestions: result.followUpQuestions || [],
-        conceptualQuestions: result.conceptualQuestions || [],
-        difficulty,
-        language,
-    };
-}
-
-/**
- * Build the system prompt for the question generator.
- * @param {string} difficulty
- * @returns {string}
- */
-function buildSystemPrompt(difficulty) {
-    const difficultyInstructions = {
-        easy: "Ask fundamental questions about syntax, basic logic, and simple concepts. Suitable for beginners.",
-        medium: "Ask questions about design decisions, patterns, and moderate complexity concepts. Suitable for intermediate developers.",
-        hard: "Ask deep questions about architecture, scalability, performance, and advanced CS concepts. Suitable for senior developers.",
+    const difficultyGuide = {
+        easy:   "Focus on: what the code does, variable names, simple control flow. No jargon.",
+        medium: "Focus on: design choices, algorithm efficiency, edge cases, patterns used.",
+        hard:   "Focus on: time/space complexity, scalability, concurrency, architectural trade-offs.",
     };
 
-    return `You are a senior CS professor conducting a practical interview/viva examination.
-Your tone is professional, concise, and probing. You sound like a real professor.
-
-Difficulty level: ${difficulty.toUpperCase()}
-${difficultyInstructions[difficulty] || difficultyInstructions.medium}
-
-You MUST respond with valid JSON in exactly this structure:
+    const systemPrompt = `You are a CS professor conducting a ${difficulty.toUpperCase()} viva.
+${difficultyGuide[difficulty] || difficultyGuide.medium}
+Respond ONLY with valid JSON matching this schema exactly:
 {
-  "mainQuestions": ["...", "...", "...", "...", "..."],
-  "followUpQuestions": ["...", "...", "..."],
-  "conceptualQuestions": ["...", "..."]
+  "mainQuestions":       ["q1","q2","q3","q4","q5"],
+  "mainAnswers":         ["a1","a2","a3","a4","a5"],
+  "followUpQuestions":   ["q1","q2","q3"],
+  "followUpAnswers":     ["a1","a2","a3"],
+  "conceptualQuestions": ["q1","q2"],
+  "conceptualAnswers":   ["a1","a2"]
 }
-
 Rules:
-- Generate exactly 5 main questions
-- Generate exactly 3 follow-up questions
-- Generate exactly 2 deep conceptual questions
-- Questions should be specific to the provided code
-- Questions should test understanding, not just recall
-- Adapt complexity to the difficulty level`;
-}
+- Exactly 5 main, 3 follow-up, 2 conceptual questions
+- Every question index has a matching answer at the same index  
+- Questions must reference actual function/variable names from the code
+- Answers: 2-3 sentences, clear and direct, appropriate for ${difficulty} level`;
 
-/**
- * Build the user prompt with the code context.
- * @param {string} code
- * @param {string} language
- * @param {string} difficulty
- * @returns {string}
- */
-function buildUserPrompt(code, language, difficulty) {
-    return `Analyze the following ${language} code and generate ${difficulty}-level interview questions:
+    const userPrompt = `Analyse this code and generate ${difficulty}-level viva questions with model answers:\n\`\`\`\n${snippet}\n\`\`\``;
 
-\`\`\`${language}
-${code}
-\`\`\`
+    const rawJson = await generateStructured(systemPrompt, userPrompt, { max_tokens: 1400 });
+    const result  = JSON.parse(rawJson);
 
-Generate structured interview questions as specified.`;
+    return {
+        mainQuestions:       result.mainQuestions       || [],
+        mainAnswers:         result.mainAnswers         || [],
+        followUpQuestions:   result.followUpQuestions   || [],
+        followUpAnswers:     result.followUpAnswers     || [],
+        conceptualQuestions: result.conceptualQuestions || [],
+        conceptualAnswers:   result.conceptualAnswers   || [],
+        difficulty,
+    };
 }

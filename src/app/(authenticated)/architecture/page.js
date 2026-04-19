@@ -25,13 +25,85 @@ const DIAGRAM_TYPES = [
 
 export default function ArchitecturePage() {
     // Input state
-    const [code, setCode] = useState("");
+    const [code, setCode] = useState(`import { EventEmitter } from "events";
+import { readFile, writeFile } from "fs/promises";
+import { Logger } from "./utils/logger";
+
+class Animal {
+    constructor(name, sound) {
+        this.name = name;
+        this.sound = sound;
+    }
+
+    speak() {
+        return \`\${this.name} says \${this.sound}!\`;
+    }
+
+    describe() {
+        return \`I am \${this.name}\`;
+    }
+}
+
+class Dog extends Animal {
+    constructor(name) {
+        super(name, "Woof");
+        this.tricks = [];
+    }
+
+    learnTrick(trick) {
+        this.tricks.push(trick);
+    }
+
+    performTricks() {
+        return this.tricks.map(t => this.speak() + \` — \${t}\`);
+    }
+}
+
+class Cat extends Animal {
+    constructor(name) {
+        super(name, "Meow");
+    }
+
+    purr() {
+        return "Prrrr...";
+    }
+}
+
+async function loadAnimals(filePath) {
+    const raw = await readFile(filePath, "utf8");
+    return JSON.parse(raw);
+}
+
+async function saveAnimals(filePath, animals) {
+    await writeFile(filePath, JSON.stringify(animals, null, 2));
+}
+
+function createAnimal(type, name) {
+    if (type === "dog") return new Dog(name);
+    if (type === "cat") return new Cat(name);
+    return new Animal(name, "...");
+}
+
+async function main() {
+    const animals = await loadAnimals("./animals.json");
+    const dog = createAnimal("dog", "Rex");
+    dog.learnTrick("sit");
+    dog.learnTrick("shake");
+    const tricks = dog.performTricks();
+    await saveAnimals("./output.json", tricks);
+}
+
+main();`);
     const [language, setLanguage] = useState("javascript");
 
     // Generated diagrams state
-    const [diagrams, setDiagrams] = useState(null);
+    const [diagrams, setDiagrams]         = useState(null);
     const [activeDiagram, setActiveDiagram] = useState("classDiagram");
-    const [rawMode, setRawMode] = useState(false);
+    const [rawMode, setRawMode]             = useState(false);
+    const [aiSummary, setAiSummary]         = useState(null);
+    const [usedAI, setUsedAI]               = useState(false);
+    const [showRawAI, setShowRawAI]         = useState(false);
+    const [aiJson, setAiJson]               = useState(null);
 
     // Mermaid rendering
     const mermaidRef = useRef(null);
@@ -90,7 +162,11 @@ export default function ArchitecturePage() {
 
         try {
             const result = await generateDiagram.mutateAsync({ code, language });
-            setDiagrams(result);
+            setDiagrams(result.diagrams ?? result);
+            setAiSummary(result.summary ?? null);
+            setUsedAI(result.usedAI ?? false);
+            setAiJson(result.aiJson ?? null);
+            setShowRawAI(false);
             setActiveDiagram("classDiagram");
         } catch (err) {
             console.error("Diagram generation failed:", err);
@@ -155,9 +231,20 @@ export default function ArchitecturePage() {
                     onClick={handleGenerate}
                     disabled={generateDiagram.isPending || !code.trim()}
                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium
-                     rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                     rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                    {generateDiagram.isPending ? "Generating Diagrams..." : "Generate Diagrams"}
+                    {generateDiagram.isPending ? (
+                        <>
+                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Generating with Groq AI...
+                        </>
+                    ) : (
+                        <>
+                            <span>✨</span>
+                            Generate Diagrams
+                            <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono tracking-widest">AI</span>
+                        </>
+                    )}
                 </button>
 
                 {/* Error display */}
@@ -196,6 +283,33 @@ export default function ArchitecturePage() {
                             {rawMode ? "Show Rendered" : "Show Raw"}
                         </button>
                     </div>
+
+                    {/* AI Summary Panel */}
+                    {aiSummary && (
+                        <div className="flex items-start gap-3 p-4 rounded-lg bg-gradient-to-r from-emerald-950/60 to-teal-950/40 border border-emerald-500/30">
+                            <span className="shrink-0 px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded text-[10px] font-bold tracking-widest text-emerald-400 mt-0.5">
+                                AI
+                            </span>
+                            <p className="text-sm text-emerald-200 leading-relaxed flex-1">{aiSummary}</p>
+                            {aiJson && (
+                                <button
+                                    onClick={() => setShowRawAI(v => !v)}
+                                    className="shrink-0 text-[10px] text-emerald-600 hover:text-emerald-400 font-mono underline"
+                                >
+                                    {showRawAI ? "hide" : "raw JSON"}
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Collapsible Raw AI JSON */}
+                    {showRawAI && aiJson && (
+                        <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto border border-gray-700">
+                            <pre className="text-xs text-gray-300 whitespace-pre-wrap">
+                                {JSON.stringify(aiJson, null, 2)}
+                            </pre>
+                        </div>
+                    )}
 
                     {/* Metadata */}
                     {diagrams.metadata && (

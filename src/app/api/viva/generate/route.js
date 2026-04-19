@@ -9,7 +9,7 @@ import { withAuth } from "@/lib/middleware";
 import { errorResponse, successResponse } from "@/lib/apiResponse";
 import { generateQuestions } from "@/services/viva/questionGenerator";
 
-async function handler(request) {
+async function handler(request, context, user) {
     try {
         const body = await request.json();
         const { code, language, difficulty } = body;
@@ -27,7 +27,6 @@ async function handler(request) {
 
         const questions = await generateQuestions({
             code: code.trim(),
-            language: language || "javascript",
             difficulty: safeDifficulty,
         });
 

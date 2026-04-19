@@ -10,23 +10,27 @@ import User from "@/models/User";
 import { withAuth } from "@/lib/middleware";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
 
-async function handler(request) {
+async function handler(request, context, user) {
     try {
         await dbConnect();
 
-        // request.user is injected by the auth middleware
-        const user = await User.findById(request.user.userId);
-        if (!user) {
+        // user is passed explicitly by withAuth — no request mutation needed
+        if (!user?.userId) {
+            return errorResponse("Authentication context missing.", 401);
+        }
+
+        const found = await User.findById(user.userId);
+        if (!found) {
             return errorResponse("User not found.", 404);
         }
 
         return successResponse({
             user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                createdAt: user.createdAt,
+                id: found._id,
+                name: found.name,
+                email: found.email,
+                role: found.role,
+                createdAt: found.createdAt,
             },
         });
     } catch (error) {

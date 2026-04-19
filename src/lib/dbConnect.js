@@ -7,6 +7,7 @@
  */
 
 import mongoose from "mongoose";
+import dns from "dns";
 
 /** Global cache to prevent reconnecting on every API call */
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -42,8 +43,15 @@ async function dbConnect() {
 
   // If no pending connection promise, create one
   if (!cached.promise) {
+    // Force public DNS resolvers before connecting.
+    // The system's default DNS refuses SRV record queries which the
+    // mongodb+srv:// scheme depends on. Google (8.8.8.8) and Cloudflare
+    // (1.1.1.1) both support SRV lookups and resolve Atlas correctly.
+    dns.setServers(["8.8.8.8", "1.1.1.1"]);
+
     const opts = {
-      bufferCommands: false, // Disable buffering for faster error detection
+      bufferCommands: false,        // surface errors immediately
+      serverSelectionTimeoutMS: 5000, // fail fast instead of hanging
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
