@@ -6,7 +6,7 @@
  */
 
 import { withAuth } from "@/lib/middleware";
-import { errorResponse } from "@/lib/apiResponse";
+import { errorResponse, sanitizeFilename } from "@/lib/apiResponse";
 import { convertToDocx } from "@/services/conversion/docxService";
 
 async function handler(request) {
@@ -23,7 +23,7 @@ async function handler(request) {
             status: 200,
             headers: {
                 "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "Content-Disposition": `attachment; filename="${body.title || "report"}.docx"`,
+                "Content-Disposition": `attachment; filename="${sanitizeFilename(body.title)}.docx"`,
             },
         });
     } catch (error) {

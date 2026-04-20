@@ -38,6 +38,122 @@ export function generateDiagram({ code, language = "javascript" }) {
 }
 
 /**
+ * Generate Mermaid diagrams from AI-extracted structural JSON.
+ * This produces richer diagrams than the regex fallback because:
+ *  - The class diagram includes methods extracted by the LLM
+ *  - The flowchart uses real callEdges instead of sequential linking
+ *  - The dependency graph uses the same import data but with AI deduplication
+ *
+ * @param {Object} ai  Parsed JSON from Groq structured extraction
+ * @param {string} ai.summary
+ * @param {Array}  ai.classes    [{ name, parent, methods }]
+ * @param {Array}  ai.functions  [{ name, params, calls }]
+ * @param {Array}  ai.imports    [{ source, named }]
+ * @param {Array}  ai.callEdges  [{ from, to }]
+ * @returns {{ classDiagram, flowchart, dependencyGraph }}
+ */
+export function generateDiagramFromAI(ai) {
+    const classes   = ai.classes   || [];
+    const functions = ai.functions || [];
+    const imports   = ai.imports   || [];
+    const edges     = ai.callEdges || [];
+
+    // ── Class Diagram ────────────────────────────────────────────────────────
+    const classLines = ["classDiagram"];
+
+    classes.forEach(cls => {
+        if (cls.parent) {
+            classLines.push(`  ${cls.parent} <|-- ${cls.name}`);
+        }
+        if (cls.methods?.length > 0) {
+            classLines.push(`  class ${cls.name} {`);
+            cls.methods.slice(0, 8).forEach(m => classLines.push(`    +${m}()`));
+            classLines.push("  }");
+        } else {
+            classLines.push(`  class ${cls.name}`);
+        }
+    });
+
+    if (classes.length === 0) {
+        classLines.push("  class Module {");
+        functions.slice(0, 10).forEach(fn => {
+            classLines.push(`    +${fn.name}(${(fn.params || []).join(", ")})`);
+        });
+        classLines.push("  }");
+    }
+
+    // ── Flowchart (call graph) ───────────────────────────────────────────────
+    const flowLines = ["flowchart TD"];
+
+    const allNodes = new Map();
+
+    // Add class nodes (stadium shape)
+    classes.forEach((cls, i) => {
+        const id = `C${i}_${cls.name}`;
+        flowLines.push(`  ${id}(["${cls.name}"])`);
+        allNodes.set(cls.name, id);
+    });
+
+    // Add function nodes (rounded box)
+    functions.forEach((fn, i) => {
+        const id = `F${i}_${fn.name}`;
+        flowLines.push(`  ${id}["${fn.name}()"]`);
+        allNodes.set(fn.name, id);
+    });
+
+    // Draw real call edges
+    if (edges.length > 0) {
+        edges.forEach(({ from, to }) => {
+            const fromId = allNodes.get(from);
+            const toId   = allNodes.get(to);
+            if (fromId && toId) {
+                flowLines.push(`  ${fromId} --> ${toId}`);
+            }
+        });
+    } else if (functions.length > 1) {
+        // No edges provided — fall back to sequential for readability
+        functions.forEach((fn, i) => {
+            if (i > 0) {
+                const prevId = allNodes.get(functions[i - 1].name);
+                const curId  = allNodes.get(fn.name);
+                if (prevId && curId) flowLines.push(`  ${prevId} --> ${curId}`);
+            }
+        });
+    }
+
+    if (classes.length === 0 && functions.length === 0) {
+        flowLines.push('  A["No structures detected"]');
+    }
+
+    // ── Dependency Graph ─────────────────────────────────────────────────────
+    const depLines = ["flowchart LR"];
+
+    if (imports.length === 0) {
+        depLines.push('  A["No dependencies detected"]');
+    } else {
+        depLines.push('  APP["Current Module"]');
+        imports.forEach((imp, i) => {
+            const displayName = imp.source.split("/").pop();
+            const nodeId = `D${i}`;
+            depLines.push(`  ${nodeId}["${displayName}"]`);
+            depLines.push(`  APP --> ${nodeId}`);
+            if (imp.named?.length > 0) {
+                imp.named.slice(0, 4).forEach((name, j) => {
+                    depLines.push(`  ${nodeId}N${j}("${name}")`);
+                    depLines.push(`  ${nodeId} --> ${nodeId}N${j}`);
+                });
+            }
+        });
+    }
+
+    return {
+        classDiagram:    classLines.join("\n"),
+        flowchart:       flowLines.join("\n"),
+        dependencyGraph: depLines.join("\n"),
+    };
+}
+
+/**
  * Extract structural elements (classes, functions, imports)
  * from source code using regex pattern matching.
  *
@@ -205,7 +321,7 @@ function generateFlowchart(elements) {
     // Create nodes for classes
     elements.classes.forEach((cls, i) => {
         const nodeId = `C${i}`;
-        lines.push(`  ${nodeId}[["${cls.name}"]}`);
+        lines.push(`  ${nodeId}[["${cls.name}"]]`);
 
         // Connect class methods
         cls.methods.forEach((method, j) => {

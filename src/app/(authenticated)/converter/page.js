@@ -8,26 +8,88 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useFormatConvert } from "@/hooks/useApi";
 
 /** Supported formats with labels and extensions */
 const FORMATS = [
-    { value: "markdown", label: "Markdown", ext: ".md", icon: "📝" },
-    { value: "latex", label: "LaTeX", ext: ".tex", icon: "📐" },
-    { value: "html", label: "HTML", ext: ".html", icon: "🌐" },
-    { value: "txt", label: "Plain Text", ext: ".txt", icon: "📄" },
-    { value: "json", label: "JSON", ext: ".json", icon: "🔧" },
-    { value: "csv", label: "CSV", ext: ".csv", icon: "📊" },
+    { value: "markdown", label: "Markdown",   ext: ".md",   icon: "📝" },
+    { value: "html",     label: "HTML",        ext: ".html", icon: "🌐" },
+    { value: "latex",    label: "LaTeX",       ext: ".tex",  icon: "📐" },
+    { value: "txt",      label: "Plain Text",  ext: ".txt",  icon: "📄" },
+    { value: "json",     label: "JSON",        ext: ".json", icon: "🔧" },
 ];
 
+/**
+ * Conversion quality matrix.
+ * "ok"    = full-fidelity conversion
+ * "lossy" = some structure is lost
+ */
+const COMPAT = {
+    markdown: { html: "ok",    latex: "ok",    txt: "ok",    json: "ok"    },
+    html:     { markdown: "lossy", latex: "lossy", txt: "ok",  json: "ok"    },
+    latex:    { markdown: "lossy", html: "lossy",  txt: "lossy", json: "lossy" },
+    txt:      { markdown: "ok",  html: "ok",   latex: "ok",  json: "ok"    },
+    json:     { markdown: "ok",  html: "ok",   latex: "ok",  txt: "ok"    },
+};
+
+/** Only show valid targets for each source format in the "To" dropdown */
+const VALID_TARGETS = {
+    markdown: ["html",     "txt",      "latex"],
+    html:     ["markdown", "txt"],
+    latex:    ["txt",      "markdown"],
+    txt:      ["html",     "markdown", "latex"],
+    json:     ["txt",      "markdown", "html"],
+};
+
 export default function ConverterPage() {
-    const [inputContent, setInputContent] = useState("");
+    const [inputContent, setInputContent] = useState(`# Binary Search Algorithm
+
+**Binary search** is a classic *divide and conquer* algorithm that searches a sorted array in **O(log n)** time.
+
+## How it works
+
+1. Start with the full array
+2. Compare the target with the **middle element**
+3. If smaller, search the **left half** — if larger, the **right half**
+4. Repeat until found or the search space is empty
+
+## Code Example
+
+\`\`\`javascript
+function binarySearch(arr, target) {
+    let low = 0, high = arr.length - 1;
+    while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        if (arr[mid] === target) return mid;
+        arr[mid] < target ? low = mid + 1 : high = mid - 1;
+    }
+    return -1;
+}
+\`\`\`
+
+## Complexity
+
+- **Time**: \`O(log n)\` — halves the search space each iteration
+- **Space**: \`O(1)\` — iterative version uses constant memory
+
+> The array **must be sorted** before applying binary search.
+
+Learn more at [Wikipedia](https://en.wikipedia.org/wiki/Binary_search_algorithm).`);
     const [outputContent, setOutputContent] = useState("");
     const [fromFormat, setFromFormat] = useState("markdown");
     const [toFormat, setToFormat] = useState("html");
 
     const formatConvert = useFormatConvert();
+
+    // When source format changes, reset target to its first valid option
+    // (e.g. switching from markdown to json means latex/html/txt become invalid)
+    useEffect(() => {
+        const valid = VALID_TARGETS[fromFormat] || [];
+        if (!valid.includes(toFormat)) {
+            setToFormat(valid[0] || "");
+        }
+    }, [fromFormat]);
 
     /** Run conversion */
     const handleConvert = async () => {
@@ -92,7 +154,7 @@ export default function ConverterPage() {
                     🔄 Format Converter
                 </h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1">
-                    Convert between Markdown, LaTeX, HTML, Plain Text, JSON, and CSV formats.
+                    Convert between Markdown, HTML, LaTeX, Plain Text, and JSON.
                 </p>
             </div>
 
@@ -132,7 +194,7 @@ export default function ConverterPage() {
                     </svg>
                 </button>
 
-                {/* To format */}
+                {/* To format — only show valid targets */}
                 <div className="flex-1 w-full">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         To
@@ -144,11 +206,14 @@ export default function ConverterPage() {
                             dark:border-gray-600 rounded-lg text-gray-900 dark:text-white
                             focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     >
-                        {FORMATS.map((f) => (
-                            <option key={f.value} value={f.value}>
-                                {f.icon} {f.label}
-                            </option>
-                        ))}
+                        {FORMATS
+                            .filter(f => (VALID_TARGETS[fromFormat] || []).includes(f.value))
+                            .map((f) => (
+                                <option key={f.value} value={f.value}>
+                                    {f.icon} {f.label}
+                                </option>
+                            ))
+                        }
                     </select>
                 </div>
             </div>
@@ -237,6 +302,16 @@ export default function ConverterPage() {
                 <p className="text-center text-sm text-yellow-600 dark:text-yellow-400">
                     Source and target formats are the same. Select different formats to convert.
                 </p>
+            )}
+
+            {/* Lossy conversion warning */}
+            {fromFormat !== toFormat && COMPAT[fromFormat]?.[toFormat] === "lossy" && (
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-600 dark:text-amber-400 text-sm">
+                    <span>⚠️</span>
+                    <span>
+                        <strong>{FORMATS.find(f => f.value === fromFormat)?.label} → {FORMATS.find(f => f.value === toFormat)?.label}</strong> is a lossy conversion — some formatting or structure may not carry over.
+                    </span>
+                </div>
             )}
 
             {/* Error display */}

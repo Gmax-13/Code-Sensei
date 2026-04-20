@@ -28,7 +28,13 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      {/*
+        * suppressHydrationWarning: next-themes may modify body classes
+        * during hydration (adding/removing "dark" class). Without this,
+        * React detects a mismatch between server and client attributes,
+        * which can cascade into removeChild errors during reconciliation.
+        */}
+      <body suppressHydrationWarning className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <ThemeProvider>
           <QueryProvider>
             <SidebarProvider>

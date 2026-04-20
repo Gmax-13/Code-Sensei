@@ -6,7 +6,7 @@
  */
 
 import { withAuth } from "@/lib/middleware";
-import { errorResponse } from "@/lib/apiResponse";
+import { errorResponse, sanitizeFilename } from "@/lib/apiResponse";
 import { convertToPdf } from "@/services/conversion/pdfService";
 
 async function handler(request) {
@@ -23,7 +23,7 @@ async function handler(request) {
             status: 200,
             headers: {
                 "Content-Type": "application/pdf",
-                "Content-Disposition": `attachment; filename="${body.title || "report"}.pdf"`,
+                "Content-Disposition": `attachment; filename="${sanitizeFilename(body.title)}.pdf"`,
             },
         });
     } catch (error) {

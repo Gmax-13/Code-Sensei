@@ -1,19 +1,41 @@
 /**
  * POST /api/convert/format
  * --------------------------
- * General-purpose format-to-format converter.
- * Accepts text content in one format and converts to another.
- * Supports: markdown, latex, html, txt, json, csv
- * Protected endpoint — requires authentication.
+ * Format converter using DIRECT per-pair conversion functions.
+ *
+ * Each pair has its own dedicated function instead of an intermediate
+ * representation — this prevents syntax bleed-through (e.g. **bold**
+ * surviving in plain text output) that the old two-step approach caused.
+ *
+ * Supported pairs:
+ *   markdown → html, txt, latex
+ *   html     → markdown, txt
+ *   latex    → txt, markdown
+ *   txt      → html, markdown, latex
+ *   json     → txt, markdown, html
  */
 
 import { withAuth } from "@/lib/middleware";
 import { errorResponse, successResponse } from "@/lib/apiResponse";
 
-/** Supported format identifiers */
-const SUPPORTED_FORMATS = ["markdown", "latex", "html", "txt", "json", "csv"];
+// ── Valid conversion pairs ────────────────────────────────────────────────────
+const CONVERTERS = {
+    "markdown|html":     markdownToHtml,
+    "markdown|txt":      markdownToTxt,
+    "markdown|latex":    markdownToLatex,
+    "html|markdown":     htmlToMarkdown,
+    "html|txt":          htmlToTxt,
+    "latex|txt":         latexToTxt,
+    "latex|markdown":    latexToMarkdown,
+    "txt|html":          txtToHtml,
+    "txt|markdown":      txtToMarkdown,
+    "txt|latex":         txtToLatex,
+    "json|txt":          jsonToTxt,
+    "json|markdown":     jsonToMarkdown,
+    "json|html":         jsonToHtml,
+};
 
-async function handler(request) {
+async function handler(request, context, user) {
     try {
         const body = await request.json();
         const { content, from, to } = body;
@@ -21,18 +43,25 @@ async function handler(request) {
         if (!content || typeof content !== "string") {
             return errorResponse("Content is required and must be a string.", 400);
         }
-        if (!from || !SUPPORTED_FORMATS.includes(from)) {
-            return errorResponse(`Invalid source format. Supported: ${SUPPORTED_FORMATS.join(", ")}`, 400);
-        }
-        if (!to || !SUPPORTED_FORMATS.includes(to)) {
-            return errorResponse(`Invalid target format. Supported: ${SUPPORTED_FORMATS.join(", ")}`, 400);
+        if (!from || !to) {
+            return errorResponse("Both 'from' and 'to' formats are required.", 400);
         }
         if (from === to) {
             return successResponse({ converted: content, from, to });
         }
 
-        const converted = convertFormat(content, from, to);
+        const converterKey = `${from}|${to}`;
+        const converterFn = CONVERTERS[converterKey];
 
+        if (!converterFn) {
+            return errorResponse(
+                `Conversion from '${from}' to '${to}' is not supported. ` +
+                `Supported pairs: ${Object.keys(CONVERTERS).join(", ")}`,
+                400
+            );
+        }
+
+        const converted = converterFn(content);
         return successResponse({ converted, from, to });
     } catch (error) {
         console.error("Format conversion error:", error);
@@ -42,316 +71,597 @@ async function handler(request) {
 
 export const POST = withAuth(handler);
 
-// ──────────────────────────────────────────────
-// Conversion logic
-// ──────────────────────────────────────────────
+
+// ════════════════════════════════════════════════════════════════════════════
+// MARKDOWN source converters
+// ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Convert text content between formats.
- * @param {string} content
- * @param {string} from
- * @param {string} to
- * @returns {string}
+ * markdown → plain text
+ * Properly strips ALL markdown syntax so **bold** becomes bold, not **bold**.
  */
-function convertFormat(content, from, to) {
-    // Normalize to an intermediate representation (plain structured text)
-    const intermediate = parseFromFormat(content, from);
-
-    // Render to target format
-    return renderToFormat(intermediate, to);
+function markdownToTxt(md) {
+    return md
+        // Remove fenced code blocks entirely (keep just the code content)
+        .replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) => code.trim())
+        // Setext-style headings (underlined with === or ---)
+        .replace(/^(.+)\n={2,}\s*$/gm, (_, t) => t.toUpperCase())
+        .replace(/^(.+)\n-{2,}\s*$/gm, (_, t) => t)
+        // ATX headings — strip the # markers
+        .replace(/^#{1,6}\s+(.+?)(?:\s+#+)?$/gm, "$1")
+        // Horizontal rules
+        .replace(/^[-*_]{3,}\s*$/gm, "─".repeat(40))
+        // Images — discard
+        .replace(/!\[.*?\]\(.*?\)/g, "")
+        // Links — keep display text only
+        .replace(/\[(.+?)\]\(.*?\)/g, "$1")
+        // Reference-style links
+        .replace(/\[(.+?)\]\[.*?\]/g, "$1")
+        // Bold+italic
+        .replace(/\*{3}(.+?)\*{3}/g, "$1")
+        .replace(/_{3}(.+?)_{3}/g, "$1")
+        // Bold
+        .replace(/\*{2}(.+?)\*{2}/g, "$1")
+        .replace(/_{2}(.+?)_{2}/g, "$1")
+        // Italic
+        .replace(/\*(.+?)\*/g, "$1")
+        .replace(/_(.+?)_/g, "$1")
+        // Strikethrough
+        .replace(/~~(.+?)~~/g, "$1")
+        // Inline code
+        .replace(/`(.+?)`/g, "$1")
+        // Blockquotes — strip the >
+        .replace(/^>\s?/gm, "")
+        // Unordered lists — convert to bullet
+        .replace(/^[ \t]*[-*+]\s+/gm, "• ")
+        // Ordered lists — keep numbering
+        .replace(/^[ \t]*(\d+)[.)]\s+/gm, "$1. ")
+        // Collapse 3+ blank lines to 2
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 }
 
 /**
- * Parse source format into an intermediate structure.
- * @param {string} content
- * @param {string} format
- * @returns {Object}
+ * markdown → HTML
+ * Handles headings, bold, italic, code blocks, inline code, links, images,
+ * unordered/ordered lists, blockquotes, horizontal rules, and paragraphs.
  */
-function parseFromFormat(content, format) {
-    switch (format) {
-        case "markdown":
-            return parseMarkdown(content);
-        case "html":
-            return parseHtml(content);
-        case "latex":
-            return parseLatex(content);
-        case "json":
-            return parseJson(content);
-        case "csv":
-            return parseCsv(content);
-        case "txt":
-        default:
-            return { type: "text", lines: content.split("\n"), raw: content };
-    }
+function markdownToHtml(md) {
+    let html = md
+        // Normalize line endings
+        .replace(/\r\n/g, "\n")
+        // Fenced code blocks
+        .replace(/```([\w]*)\n([\s\S]*?)```/g, (_, lang, code) =>
+            `<pre><code${lang ? ` class="language-${lang}"` : ""}>${escapeHtml(code.trim())}</code></pre>`)
+        // ATX headings
+        .replace(/^#{6}\s+(.+)$/gm, "<h6>$1</h6>")
+        .replace(/^#{5}\s+(.+)$/gm, "<h5>$1</h5>")
+        .replace(/^#{4}\s+(.+)$/gm, "<h4>$1</h4>")
+        .replace(/^#{3}\s+(.+)$/gm, "<h3>$1</h3>")
+        .replace(/^#{2}\s+(.+)$/gm, "<h2>$1</h2>")
+        .replace(/^#{1}\s+(.+)$/gm, "<h1>$1</h1>")
+        // Setext headings
+        .replace(/^(.+)\n={2,}$/gm, "<h1>$1</h1>")
+        .replace(/^(.+)\n-{2,}$/gm, "<h2>$1</h2>")
+        // Horizontal rules
+        .replace(/^[-*_]{3,}\s*$/gm, "<hr>")
+        // Blockquotes
+        .replace(/^((?:>.*\n?)+)/gm, (block) => {
+            const inner = block.replace(/^>\s?/gm, "").trim();
+            return `<blockquote>${inner}</blockquote>`;
+        })
+        // Unordered lists
+        .replace(/^((?:[ \t]*[-*+]\s+.+\n?)+)/gm, (block) => {
+            const items = block.trim().split("\n")
+                .map(l => `<li>${l.replace(/^[ \t]*[-*+]\s+/, "")}</li>`)
+                .join("\n");
+            return `<ul>\n${items}\n</ul>`;
+        })
+        // Ordered lists
+        .replace(/^((?:[ \t]*\d+[.)]\s+.+\n?)+)/gm, (block) => {
+            const items = block.trim().split("\n")
+                .map(l => `<li>${l.replace(/^[ \t]*\d+[.)]\s+/, "")}</li>`)
+                .join("\n");
+            return `<ol>\n${items}\n</ol>`;
+        })
+        // Images (before links)
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">')
+        // Links
+        .replace(/\[(.+?)\]\((.+?)(?:\s+"(.+?)")?\)/g, (_, text, href, title) =>
+            title ? `<a href="${href}" title="${title}">${text}</a>` : `<a href="${href}">${text}</a>`)
+        // Bold+italic
+        .replace(/\*{3}(.+?)\*{3}/g, "<strong><em>$1</em></strong>")
+        .replace(/_{3}(.+?)_{3}/g, "<strong><em>$1</em></strong>")
+        // Bold
+        .replace(/\*{2}(.+?)\*{2}/g, "<strong>$1</strong>")
+        .replace(/_{2}(.+?)_{2}/g, "<strong>$1</strong>")
+        // Italic
+        .replace(/\*(.+?)\*/g, "<em>$1</em>")
+        .replace(/_(.+?)_/g, "<em>$1</em>")
+        // Strikethrough
+        .replace(/~~(.+?)~~/g, "<s>$1</s>")
+        // Inline code
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        // Paragraphs: blank-line-separated blocks not already wrapped in block tags
+        .split(/\n{2,}/)
+        .map(block => {
+            const trimmed = block.trim();
+            if (!trimmed) return "";
+            if (/^<(h[1-6]|ul|ol|li|blockquote|pre|hr|img)/.test(trimmed)) return trimmed;
+            return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
+        })
+        .join("\n\n");
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Document</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; line-height: 1.6; color: #1a1a1a; }
+    pre  { background: #f4f4f4; padding: 1em; border-radius: 6px; overflow-x: auto; }
+    code { font-family: monospace; background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
+    pre code { background: none; padding: 0; }
+    blockquote { border-left: 4px solid #ddd; margin: 0; padding-left: 1em; color: #555; }
+    img { max-width: 100%; }
+  </style>
+</head>
+<body>
+${html.trim()}
+</body>
+</html>`;
 }
 
 /**
- * Render intermediate structure to target format.
- * @param {Object} data
- * @param {string} format
- * @returns {string}
+ * markdown → LaTeX
+ * Converts headings, bold, italic, lists, code, links.
  */
-function renderToFormat(data, format) {
-    switch (format) {
-        case "markdown":
-            return renderMarkdown(data);
-        case "html":
-            return renderHtml(data);
-        case "latex":
-            return renderLatex(data);
-        case "json":
-            return renderJson(data);
-        case "csv":
-            return renderCsv(data);
-        case "txt":
-        default:
-            return renderTxt(data);
-    }
+function markdownToLatex(md) {
+    const body = md
+        .replace(/\r\n/g, "\n")
+        // Fenced code blocks → verbatim
+        .replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) =>
+            `\\begin{verbatim}\n${code.trim()}\n\\end{verbatim}`)
+        // ATX headings
+        .replace(/^#\s+(.+)$/gm,      (_, t) => `\\section{${escapeLatex(t)}}`)
+        .replace(/^##\s+(.+)$/gm,     (_, t) => `\\subsection{${escapeLatex(t)}}`)
+        .replace(/^###\s+(.+)$/gm,    (_, t) => `\\subsubsection{${escapeLatex(t)}}`)
+        .replace(/^#{4,6}\s+(.+)$/gm, (_, t) => `\\paragraph{${escapeLatex(t)}}`)
+        // Horizontal rule
+        .replace(/^[-*_]{3,}\s*$/gm, "\\hrulefill")
+        // Blockquote
+        .replace(/^>\s?(.+)$/gm, (_, t) => `\\begin{quote}\n${escapeLatex(t)}\n\\end{quote}`)
+        // Bold+italic
+        .replace(/\*{3}(.+?)\*{3}/g, (_, t) => `\\textbf{\\textit{${escapeLatex(t)}}}`)
+        // Bold
+        .replace(/\*{2}(.+?)\*{2}/g, (_, t) => `\\textbf{${escapeLatex(t)}}`)
+        .replace(/_{2}(.+?)_{2}/g,    (_, t) => `\\textbf{${escapeLatex(t)}}`)
+        // Italic
+        .replace(/\*(.+?)\*/g, (_, t) => `\\textit{${escapeLatex(t)}}`)
+        .replace(/_(.+?)_/g,   (_, t) => `\\textit{${escapeLatex(t)}}`)
+        // Inline code
+        .replace(/`([^`]+)`/g, (_, t) => `\\texttt{${escapeLatex(t)}}`)
+        // Links
+        .replace(/\[(.+?)\]\((.+?)\)/g, (_, text, url) =>
+            `\\href{${url}}{${escapeLatex(text)}}`)
+        // Unordered lists
+        .replace(/^((?:[ \t]*[-*+]\s+.+\n?)+)/gm, (block) => {
+            const items = block.trim().split("\n")
+                .map(l => `  \\item ${escapeLatex(l.replace(/^[ \t]*[-*+]\s+/, ""))}`)
+                .join("\n");
+            return `\\begin{itemize}\n${items}\n\\end{itemize}`;
+        })
+        // Ordered lists
+        .replace(/^((?:[ \t]*\d+[.)]\s+.+\n?)+)/gm, (block) => {
+            const items = block.trim().split("\n")
+                .map(l => `  \\item ${escapeLatex(l.replace(/^[ \t]*\d+[.)]\s+/, ""))}`)
+                .join("\n");
+            return `\\begin{enumerate}\n${items}\n\\end{enumerate}`;
+        })
+        // Remaining text — escape LaTeX special chars
+        .split("\n")
+        .map(line => {
+            // Don't escape lines that are already LaTeX commands
+            if (/^\\|^\s*$/.test(line)) return line;
+            return escapeLatex(line);
+        })
+        .join("\n");
+
+    return `\\documentclass[12pt]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[margin=1in]{geometry}
+\\usepackage{hyperref}
+\\usepackage{verbatim}
+\\begin{document}
+
+${body.trim()}
+
+\\end{document}`;
 }
 
-// ──────────────────────────────────────────────
-// Parsers
-// ──────────────────────────────────────────────
 
-function parseMarkdown(content) {
-    const lines = content.split("\n");
-    const sections = [];
-    let currentSection = { heading: "", body: [] };
+// ════════════════════════════════════════════════════════════════════════════
+// HTML source converters
+// ════════════════════════════════════════════════════════════════════════════
 
-    for (const line of lines) {
-        const headingMatch = line.match(/^(#{1,6})\s+(.*)/);
-        if (headingMatch) {
-            if (currentSection.heading || currentSection.body.length > 0) {
-                sections.push(currentSection);
-            }
-            currentSection = { heading: headingMatch[2], level: headingMatch[1].length, body: [] };
-        } else {
-            currentSection.body.push(line);
-        }
-    }
-    sections.push(currentSection);
-
-    return { type: "structured", sections, raw: content };
-}
-
-function parseHtml(content) {
-    // Simple HTML tag stripping for conversion purposes
-    const textContent = content
+/**
+ * html → markdown
+ * Converts common HTML tags to their Markdown equivalents.
+ */
+function htmlToMarkdown(html) {
+    return html
+        // Remove script/style blocks
         .replace(/<script[\s\S]*?<\/script>/gi, "")
         .replace(/<style[\s\S]*?<\/style>/gi, "")
+        // Code blocks
+        .replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi,
+            (_, code) => "```\n" + decodeHtmlEntities(code).trim() + "\n```")
+        // Headings
+        .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, t) => `\n# ${innerText(t)}\n`)
+        .replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, t) => `\n## ${innerText(t)}\n`)
+        .replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, t) => `\n### ${innerText(t)}\n`)
+        .replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, (_, t) => `\n#### ${innerText(t)}\n`)
+        .replace(/<h5[^>]*>([\s\S]*?)<\/h5>/gi, (_, t) => `\n##### ${innerText(t)}\n`)
+        .replace(/<h6[^>]*>([\s\S]*?)<\/h6>/gi, (_, t) => `\n###### ${innerText(t)}\n`)
+        // Bold / italic / strikethrough
+        .replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, (_, t) => `**${innerText(t)}**`)
+        .replace(/<b[^>]*>([\s\S]*?)<\/b>/gi,           (_, t) => `**${innerText(t)}**`)
+        .replace(/<em[^>]*>([\s\S]*?)<\/em>/gi,         (_, t) => `*${innerText(t)}*`)
+        .replace(/<i[^>]*>([\s\S]*?)<\/i>/gi,           (_, t) => `*${innerText(t)}*`)
+        .replace(/<s[^>]*>([\s\S]*?)<\/s>/gi,           (_, t) => `~~${innerText(t)}~~`)
+        .replace(/<del[^>]*>([\s\S]*?)<\/del>/gi,       (_, t) => `~~${innerText(t)}~~`)
+        // Inline code
+        .replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_, t) => `\`${decodeHtmlEntities(t)}\``)
+        // Links
+        .replace(/<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+            (_, href, text) => `[${innerText(text)}](${href})`)
+        // Images
+        .replace(/<img[^>]+src="([^"]*)"[^>]*alt="([^"]*)"[^>]*/gi,
+            (_, src, alt) => `![${alt}](${src})`)
+        .replace(/<img[^>]+src="([^"]*)"[^>]*/gi, (_, src) => `![image](${src})`)
+        // Lists
+        .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, t) => `- ${innerText(t)}\n`)
+        .replace(/<\/?[ou]l[^>]*>/gi, "\n")
+        // Blockquotes
+        .replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi,
+            (_, t) => innerText(t).trim().split("\n").map(l => `> ${l}`).join("\n"))
+        // Paragraphs and line breaks
         .replace(/<br\s*\/?>/gi, "\n")
         .replace(/<\/p>/gi, "\n\n")
-        .replace(/<\/h[1-6]>/gi, "\n")
+        .replace(/<hr\s*\/?>/gi, "\n---\n")
+        // Strip remaining tags
         .replace(/<[^>]+>/g, "")
         .replace(/&nbsp;/g, " ")
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        // Collapse excess blank lines
+        .replace(/\n{3,}/g, "\n\n")
         .trim();
-
-    return { type: "text", lines: textContent.split("\n"), raw: content };
 }
 
-function parseLatex(content) {
-    const textContent = content
-        .replace(/\\documentclass.*?\n/g, "")
-        .replace(/\\usepackage.*?\n/g, "")
+/**
+ * html → plain text
+ * Strips all HTML and decodes entities.
+ */
+function htmlToTxt(html) {
+    return html
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n\n")
+        .replace(/<\/h[1-6]>/gi, "\n")
+        .replace(/<\/li>/gi, "\n")
+        .replace(/<hr\s*\/?>/gi, "\n" + "─".repeat(40) + "\n")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// LaTeX source converters
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * latex → plain text
+ * Strips LaTeX commands and environments.
+ */
+function latexToTxt(latex) {
+    return latex
+        .replace(/\\documentclass.*\n/g, "")
+        .replace(/\\usepackage.*\n/g, "")
         .replace(/\\begin\{document\}/g, "")
         .replace(/\\end\{document\}/g, "")
         .replace(/\\maketitle/g, "")
-        .replace(/\\title\{(.*?)\}/g, "# $1")
-        .replace(/\\section\{(.*?)\}/g, "\n## $1\n")
-        .replace(/\\subsection\{(.*?)\}/g, "\n### $1\n")
-        .replace(/\\textbf\{(.*?)\}/g, "$1")
-        .replace(/\\textit\{(.*?)\}/g, "$1")
-        .replace(/\\begin\{.*?\}/g, "")
-        .replace(/\\end\{.*?\}/g, "")
-        .replace(/\\item\s*/g, "- ")
-        .replace(/\\[a-zA-Z]+\{?\}?/g, "")
+        .replace(/\\section\*?\{(.+?)\}/g, (_, t) => `\n${t.toUpperCase()}\n${"─".repeat(t.length)}\n`)
+        .replace(/\\subsection\*?\{(.+?)\}/g, (_, t) => `\n${t}\n${"─".repeat(t.length)}\n`)
+        .replace(/\\subsubsection\*?\{(.+?)\}/g, "\n$1\n")
+        .replace(/\\textbf\{(.+?)\}/g, "$1")
+        .replace(/\\textit\{(.+?)\}/g, "$1")
+        .replace(/\\texttt\{(.+?)\}/g, "$1")
+        .replace(/\\href\{[^}]+\}\{(.+?)\}/g, "$1")
+        .replace(/\\begin\{verbatim\}([\s\S]*?)\\end\{verbatim\}/g, "$1")
+        .replace(/\\begin\{itemize\}|\\end\{itemize\}/g, "")
+        .replace(/\\begin\{enumerate\}|\\end\{enumerate\}/g, "")
+        .replace(/\\item\s+/g, "• ")
+        .replace(/\\begin\{quote\}([\s\S]*?)\\end\{quote\}/g, (_, t) => t.trim())
+        .replace(/\\[a-zA-Z]+\{([^}]*)\}/g, "$1")
+        .replace(/\\[a-zA-Z]+/g, "")
+        .replace(/\{|\}/g, "")
+        .replace(/\n{3,}/g, "\n\n")
         .trim();
-
-    return { type: "text", lines: textContent.split("\n"), raw: content };
 }
 
-function parseJson(content) {
-    try {
-        const obj = JSON.parse(content);
-        return { type: "json", data: obj, raw: content };
-    } catch {
-        return { type: "text", lines: content.split("\n"), raw: content };
+/**
+ * latex → markdown
+ * Best-effort conversion.
+ */
+function latexToMarkdown(latex) {
+    return latex
+        .replace(/\\documentclass.*\n/g, "")
+        .replace(/\\usepackage.*\n/g, "")
+        .replace(/\\begin\{document\}/g, "")
+        .replace(/\\end\{document\}/g, "")
+        .replace(/\\maketitle/g, "")
+        .replace(/\\section\*?\{(.+?)\}/g, "\n# $1\n")
+        .replace(/\\subsection\*?\{(.+?)\}/g, "\n## $1\n")
+        .replace(/\\subsubsection\*?\{(.+?)\}/g, "\n### $1\n")
+        .replace(/\\textbf\{(.+?)\}/g, "**$1**")
+        .replace(/\\textit\{(.+?)\}/g, "*$1*")
+        .replace(/\\texttt\{(.+?)\}/g, "`$1`")
+        .replace(/\\href\{([^}]+)\}\{(.+?)\}/g, "[$2]($1)")
+        .replace(/\\begin\{verbatim\}([\s\S]*?)\\end\{verbatim\}/g,
+            (_, code) => "```\n" + code.trim() + "\n```")
+        .replace(/\\begin\{itemize\}/g, "").replace(/\\end\{itemize\}/g, "")
+        .replace(/\\begin\{enumerate\}/g, "").replace(/\\end\{enumerate\}/g, "")
+        .replace(/\\item\s+/g, "- ")
+        .replace(/\\begin\{quote\}([\s\S]*?)\\end\{quote\}/g,
+            (_, t) => t.trim().split("\n").map(l => `> ${l}`).join("\n"))
+        .replace(/\\hrulefill|\\hline/g, "---")
+        .replace(/\\[a-zA-Z]+\{([^}]*)\}/g, "$1")
+        .replace(/\\[a-zA-Z]+/g, "")
+        .replace(/\{|\}/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// Plain text source converters
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * txt → html
+ * Wraps paragraphs in <p> tags, converts blank-line-separated blocks.
+ */
+function txtToHtml(txt) {
+    const paragraphs = txt
+        .split(/\n{2,}/)
+        .map(block => {
+            const trimmed = block.trim();
+            if (!trimmed) return "";
+            // Detect ALL-CAPS line as a de-facto heading
+            if (/^[A-Z][A-Z\s\d]{3,}$/.test(trimmed)) {
+                return `<h2>${escapeHtml(trimmed)}</h2>`;
+            }
+            return `<p>${escapeHtml(trimmed).replace(/\n/g, "<br>")}</p>`;
+        })
+        .filter(Boolean)
+        .join("\n");
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Document</title>
+  <style>body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; line-height: 1.6; }</style>
+</head>
+<body>
+${paragraphs}
+</body>
+</html>`;
+}
+
+/**
+ * txt → markdown
+ * Detects underline-style headings and ALL-CAPS headings.
+ * Otherwise a text file is already valid Markdown.
+ */
+function txtToMarkdown(txt) {
+    return txt
+        // Setext-style underlines (=== or ---) already markdown — leave them
+        // ALL-CAPS short lines → h2
+        .replace(/^([A-Z][A-Z\s\d]{3,})$/gm, (line) => `## ${line.trim()}`)
+        // Consecutive dashes as horizontal rule
+        .replace(/^-{3,}\s*$/gm, "---")
+        .trim();
+}
+
+/**
+ * txt → LaTeX
+ * Each blank-line-separated block becomes a paragraph.
+ * ALL-CAPS lines become section headings.
+ */
+function txtToLatex(txt) {
+    const body = txt
+        .split(/\n{2,}/)
+        .map(block => {
+            const trimmed = block.trim();
+            if (!trimmed) return "";
+            if (/^[A-Z][A-Z\s\d]{3,}$/.test(trimmed)) {
+                return `\\section{${escapeLatex(trimmed)}}`;
+            }
+            return escapeLatex(trimmed);
+        })
+        .filter(Boolean)
+        .join("\n\n");
+
+    return `\\documentclass[12pt]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[margin=1in]{geometry}
+\\begin{document}
+
+${body}
+
+\\end{document}`;
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// JSON source converters
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * json → plain text
+ * Pretty-prints JSON. If it's an array of objects, renders as a table.
+ */
+function jsonToTxt(jsonStr) {
+    let data;
+    try { data = JSON.parse(jsonStr); } catch {
+        return `[Invalid JSON]\n\n${jsonStr}`;
     }
-}
 
-function parseCsv(content) {
-    const lines = content.trim().split("\n");
-    const rows = lines.map((line) =>
-        line.split(",").map((cell) => cell.trim().replace(/^"|"$/g, ""))
-    );
-    return { type: "csv", rows, raw: content };
-}
-
-// ──────────────────────────────────────────────
-// Renderers
-// ──────────────────────────────────────────────
-
-function renderMarkdown(data) {
-    if (data.type === "structured") {
-        return data.sections
-            .map((s) => {
-                const prefix = s.heading ? `${"#".repeat(s.level || 1)} ${s.heading}\n` : "";
-                return prefix + s.body.join("\n");
-            })
-            .join("\n\n");
-    }
-    if (data.type === "csv") {
-        if (data.rows.length === 0) return "";
-        const header = `| ${data.rows[0].join(" | ")} |`;
-        const sep = `| ${data.rows[0].map(() => "---").join(" | ")} |`;
-        const body = data.rows
-            .slice(1)
-            .map((r) => `| ${r.join(" | ")} |`)
-            .join("\n");
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+        // Render as an ASCII table
+        const keys = Object.keys(data[0]);
+        const rows = data.map(row => keys.map(k => String(row[k] ?? "")));
+        const widths = keys.map((k, i) => Math.max(k.length, ...rows.map(r => r[i].length)));
+        const sep    = widths.map(w => "─".repeat(w + 2)).join("┼");
+        const header = keys.map((k, i) => ` ${k.padEnd(widths[i])} `).join("│");
+        const body   = rows.map(row =>
+            row.map((cell, i) => ` ${cell.padEnd(widths[i])} `).join("│")
+        ).join(`\n${sep}\n`);
         return `${header}\n${sep}\n${body}`;
     }
-    if (data.type === "json") {
-        return "```json\n" + JSON.stringify(data.data, null, 2) + "\n```";
-    }
-    return data.lines ? data.lines.join("\n") : data.raw || "";
+
+    return JSON.stringify(data, null, 2);
 }
 
-function renderHtml(data) {
-    if (data.type === "structured") {
-        const body = data.sections
-            .map((s) => {
-                const tag = `h${s.level || 1}`;
-                const heading = s.heading ? `<${tag}>${escapeHtml(s.heading)}</${tag}>` : "";
-                const paragraphs = s.body
-                    .filter((l) => l.trim())
-                    .map((l) => `<p>${escapeHtml(l)}</p>`)
-                    .join("\n");
-                return heading + "\n" + paragraphs;
-            })
-            .join("\n");
-        return `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>Document</title></head>\n<body>\n${body}\n</body></html>`;
-    }
-    if (data.type === "csv") {
-        const rows = data.rows
-            .map((r, i) => {
-                const tag = i === 0 ? "th" : "td";
-                return `<tr>${r.map((c) => `<${tag}>${escapeHtml(c)}</${tag}>`).join("")}</tr>`;
-            })
-            .join("\n");
-        return `<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n<body><table border="1">\n${rows}\n</table></body></html>`;
-    }
-    if (data.type === "json") {
-        return `<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n<body><pre>${escapeHtml(JSON.stringify(data.data, null, 2))}</pre></body></html>`;
-    }
-    const lines = (data.lines || [data.raw || ""])
-        .map((l) => `<p>${escapeHtml(l)}</p>`)
-        .join("\n");
-    return `<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head>\n<body>\n${lines}\n</body></html>`;
-}
-
-function renderLatex(data) {
-    const preamble = "\\documentclass[12pt]{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage[margin=1in]{geometry}\n\\begin{document}\n";
-    const postamble = "\n\\end{document}";
-
-    if (data.type === "structured") {
-        const body = data.sections
-            .map((s) => {
-                const heading = s.heading ? `\\section{${escapeLatexText(s.heading)}}` : "";
-                const content = s.body
-                    .filter((l) => l.trim())
-                    .map((l) => escapeLatexText(l))
-                    .join("\n\n");
-                return heading + "\n" + content;
-            })
-            .join("\n\n");
-        return preamble + body + postamble;
+/**
+ * json → markdown
+ * Arrays of objects → markdown table.
+ * Objects → definition list.
+ * Primitives → code block.
+ */
+function jsonToMarkdown(jsonStr) {
+    let data;
+    try { data = JSON.parse(jsonStr); } catch {
+        return "```json\n" + jsonStr + "\n```";
     }
 
-    const content = (data.lines || [data.raw || ""])
-        .map((l) => escapeLatexText(l))
-        .join("\n\n");
-    return preamble + content + postamble;
-}
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+        const keys   = Object.keys(data[0]);
+        const header = `| ${keys.join(" | ")} |`;
+        const sep    = `| ${keys.map(() => "---").join(" | ")} |`;
+        const rows   = data.map(row =>
+            `| ${keys.map(k => String(row[k] ?? "").replace(/\|/g, "\\|")).join(" | ")} |`
+        );
+        return [header, sep, ...rows].join("\n");
+    }
 
-function renderJson(data) {
-    if (data.type === "json") {
-        return JSON.stringify(data.data, null, 2);
-    }
-    if (data.type === "csv") {
-        const [header, ...rows] = data.rows;
-        const objects = rows.map((row) => {
-            const obj = {};
-            header.forEach((key, i) => {
-                obj[key] = row[i] || "";
-            });
-            return obj;
-        });
-        return JSON.stringify(objects, null, 2);
-    }
-    return JSON.stringify({ content: data.raw || (data.lines || []).join("\n") }, null, 2);
-}
-
-function renderCsv(data) {
-    if (data.type === "csv") {
-        return data.rows.map((r) => r.map(csvEscape).join(",")).join("\n");
-    }
-    if (data.type === "json" && Array.isArray(data.data)) {
-        const keys = Object.keys(data.data[0] || {});
-        const header = keys.map(csvEscape).join(",");
-        const rows = data.data.map((row) => keys.map((k) => csvEscape(String(row[k] || ""))).join(","));
-        return [header, ...rows].join("\n");
-    }
-    // Fallback: each line is a single CSV column
-    return (data.lines || [data.raw || ""])
-        .map((l) => csvEscape(l))
-        .join("\n");
-}
-
-function renderTxt(data) {
-    if (data.type === "structured") {
-        return data.sections
-            .map((s) => {
-                const heading = s.heading ? `${s.heading}\n${"=".repeat(s.heading.length)}` : "";
-                return heading + "\n" + s.body.join("\n");
-            })
+    if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+        return Object.entries(data)
+            .map(([k, v]) => `**${k}**: ${typeof v === "object" ? "`" + JSON.stringify(v) + "`" : v}`)
             .join("\n\n");
     }
-    if (data.type === "csv") {
-        return data.rows.map((r) => r.join("\t")).join("\n");
-    }
-    if (data.type === "json") {
-        return JSON.stringify(data.data, null, 2);
-    }
-    return data.lines ? data.lines.join("\n") : data.raw || "";
+
+    return "```json\n" + JSON.stringify(data, null, 2) + "\n```";
 }
 
-// ──────────────────────────────────────────────
-// Utilities
-// ──────────────────────────────────────────────
+/**
+ * json → html
+ * Arrays of objects → HTML table.
+ * Objects → definition list.
+ * Otherwise → formatted code block.
+ */
+function jsonToHtml(jsonStr) {
+    let data;
+    try { data = JSON.parse(jsonStr); } catch {
+        return `<pre><code>${escapeHtml(jsonStr)}</code></pre>`;
+    }
+
+    let bodyHtml;
+
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
+        const keys = Object.keys(data[0]);
+        const thead = `<thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join("")}</tr></thead>`;
+        const tbodyRows = data.map(row =>
+            `<tr>${keys.map(k => `<td>${escapeHtml(String(row[k] ?? ""))}</td>`).join("")}</tr>`
+        ).join("\n");
+        bodyHtml = `<table>\n${thead}\n<tbody>\n${tbodyRows}\n</tbody>\n</table>`;
+    } else if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+        const items = Object.entries(data)
+            .map(([k, v]) => `<dt><strong>${escapeHtml(k)}</strong></dt><dd>${escapeHtml(JSON.stringify(v))}</dd>`)
+            .join("\n");
+        bodyHtml = `<dl>\n${items}\n</dl>`;
+    } else {
+        bodyHtml = `<pre><code>${escapeHtml(JSON.stringify(data, null, 2))}</code></pre>`;
+    }
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Data</title>
+  <style>
+    body  { font-family: sans-serif; max-width: 900px; margin: 2rem auto; line-height: 1.5; }
+    table { border-collapse: collapse; width: 100%; }
+    th,td { border: 1px solid #ccc; padding: 0.5em 0.8em; text-align: left; }
+    th    { background: #f0f0f0; font-weight: 600; }
+    tr:nth-child(even) { background: #fafafa; }
+    dt    { font-weight: 600; margin-top: 0.5em; }
+    dd    { margin-left: 1.5em; color: #444; }
+    pre   { background: #f4f4f4; padding: 1em; border-radius: 6px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// Utility helpers
+// ════════════════════════════════════════════════════════════════════════════
 
 function escapeHtml(text) {
-    return text
+    return String(text)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
 }
 
-function escapeLatexText(text) {
+function decodeHtmlEntities(text) {
     return text
-        .replace(/\\/g, "\\textbackslash{}")
-        .replace(/[&%$#_{}]/g, (m) => `\\${m}`)
-        .replace(/~/g, "\\textasciitilde{}")
-        .replace(/\^/g, "\\textasciicircum{}");
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, " ");
 }
 
-function csvEscape(text) {
-    if (text.includes(",") || text.includes('"') || text.includes("\n")) {
-        return `"${text.replace(/"/g, '""')}"`;
-    }
-    return text;
+/** Strip HTML tags from a string (for use inside converters) */
+function innerText(html) {
+    return decodeHtmlEntities(html.replace(/<[^>]+>/g, ""));
+}
+
+/** Escape LaTeX special characters in a text fragment */
+function escapeLatex(text) {
+    return String(text)
+        .replace(/\\/g, "\\textbackslash{}")
+        .replace(/[&%$#_{}]/g, m => `\\${m}`)
+        .replace(/~/g, "\\textasciitilde{}")
+        .replace(/\^/g, "\\textasciicircum{}");
 }

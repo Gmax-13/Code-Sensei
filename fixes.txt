@@ -1,0 +1,33 @@
+Yes — from the codebase text you attached, I can already see a few **backend** problems that are worth fixing first, and one route that looks outright wrong for Next.js App Router.  The highest-risk areas are the API test route, the auth middleware, and the file-download conversion routes. 
+# High-priority findings
+
+| Area | What looks wrong | Why it matters |
+|---|---|---|
+| Test API route | Your test endpoint appears as `src/app/api/test/test.js` instead of an App Router `route.js` file.  
+In Next.js App Router, that file shape is very likely not registered as a working API endpoint, so this route may never resolve.  
+| Auth middleware | Your auth wrapper reads the cookie header manually with `request.headers.get("cookie")`, extracts the JWT from that raw header, and then injects `request.user` for downstream handlers.  
+That is brittle because cookie parsing is manual, and the whole auth chain depends on mutating the request object before handlers like `GET /api/user/me` read `request.user.userId`.  
+| User profile route | The `GET /api/user/me` handler directly relies on `request.user` being present after `withAuth(handler)`.  
+If middleware injection ever fails, this route can break at runtime instead of cleanly returning a consistent auth error.  
+| Conversion download routes | The LaTeX, Markdown, and PDF conversion endpoints build `Content-Disposition` filenames directly from `body.title`.  
+If a title contains quotes, slashes, or control characters, the header can become malformed and downloads may fail or behave unpredictably.  
+
+## Backend details
+
+Your middleware is the main backend choke point because all protected endpoints depend on it, including `/api/user/me`, report generation, diagram generation, DSA execution, and the Viva endpoints.  Since the docs also say protected routes require a JWT cookie named `token`, auth failures here can cascade across most of the app. 
+ second pattern to watch is route coupling: several handlers assume middleware has already added user context to the request, rather than reading auth context from a safer, explicit return value or wrapper context.  That makes debugging harder because one auth-layer bug can look like many unrelated route bugs. 
+# Route concerns
+
+The clearest route-level issue is the test endpoint path because the exported handler is shown under `src/app/api/test/test.js`, while your other API handlers follow the `.../route.js` pattern in the App Router structure.  I would treat that one as a real bug, not just a style issue. 
+here is also some architectural inconsistency between the docs and the route naming shown in the text export, with the documentation describing paths like auth and feature endpoints while the directory summary compresses route names such as `reportgenerate`, `diagramgenerate`, and `dsaexecute`.  That may only be an export-format artifact, but it is worth verifying against the real folder tree because route naming mistakes are easy to miss in App Router projects. 
+# Fix first
+
+1. Rename the test endpoint to `src/app/api/test/route.js` and keep `export async function GET()` inside it.  
+2. Replace manual cookie parsing with `request.cookies.get("token")?.value` if you are using `NextRequest`, or add a null-safe parser before calling `.match()`.  
+3. Stop mutating `request` directly; instead, pass the decoded user to the handler via a wrapper argument or re-read it from a helper inside each protected route.  
+4. Sanitize `body.title` before using it in `Content-Disposition`, for example by stripping quotes, slashes, and control characters.  
+
+## Most likely bug list
+
+The issues I would prioritize in this exact order are: the broken `test.js` API route, fragile auth middleware, request mutation via `request.user`, and unsanitized download filenames in conversion endpoints.  After those, I would run a route-by-route verification pass on every protected endpoint because your backend design puts a lot of trust in the same middleware path. 
+aste the real `src/app/api` tree or the contents of `src/lib/middleware.js`, and I’ll mark the exact lines to change.

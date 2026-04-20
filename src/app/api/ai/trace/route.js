@@ -1,76 +1,81 @@
 /**
  * POST /api/ai/trace
  * -----------------------
- * Traces execution of uploaded source code using Gemini to build an ExecutionMap.
- * Powered by Gemini 2.5 Flash for deep context windows.
+ * Traces execution of source code and returns an ExecutionMap.
+ *
+ * FREE TIER OPTIMIZATIONS:
+ *   - Uses llama-3.1-8b-instant (500k tokens/day) NOT 70b (100k/day)
+ *   - JSON mode enforced → no wasted tokens on markdown/preamble
+ *   - max_tokens capped at 1200 (10 frames × ~120 tokens each = ~1200 max)
+ *   - Prompt trimmed to essentials — no verbose examples in system prompt
+ *   - Input code capped at 4000 chars (beyond that is rarely needed for tracing)
+ *   - Requests exactly 5–8 frames (not 5-15) to keep output predictable and small
  */
 
 import { withAuth } from "@/lib/middleware";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
-import { generateText } from "@/lib/geminiClient";
+import { generateStructured } from "@/lib/groqClient";
 
-/**
- * Builds the comprehensive prompt for tracing execution logic.
- */
-function buildTracerPrompt(code, language) {
-    return `You are an execution tracer and visual debugger for an educational tool.
-Analyze this ${language} code and trace its execution as if it were run with typical/example inputs. If it's a function without a call, simulate a realistic call to it.
+// Tight system prompt — every token in a system prompt counts against your budget
+const SYSTEM_PROMPT = `You are a code execution tracer for a student learning tool.
+Simulate 5 to 8 key execution frames for the provided code. If no entry point exists, simulate a realistic one.
 
-Code:
-\`\`\`${language}
-${code}
-\`\`\`
-
-Return ONLY valid JSON obeying this schema structure (NO markdown code blocks, NO text outside JSON):
+Return ONLY valid JSON (no markdown, no text outside JSON) in this exact shape:
 {
-  "language": "${language}",
-  "totalSteps": number, // count of frames
-  "hotPaths": [ "string identifying interesting parts like 'loop at line 4'" ],
+  "language": string,
+  "totalSteps": number,
+  "hotPaths": [string],
   "frames": [
     {
-      "stepIndex": number (starting at 0),
-      "line": number (the 1-indexed line number being executed),
-      "description": "Short description of what the line does, e.g. 'Initializing variable x'",
-      "annotation": "A 'why' explanation of the logic, e.g. 'Loop continues because count < 10'",
-      "variables": { "var1": value1_as_string_or_number, "var2": value2 },
-      "callStack": [ "functionName" ],
-      "highlightLines": [ lineNumber ]
+      "stepIndex": number,
+      "line": number,
+      "description": string,
+      "annotation": string,
+      "variables": { "name": "value" },
+      "callStack": [string],
+      "highlightLines": [number]
     }
   ]
 }
-
-Make sure to map out 5 to 15 key execution frames demonstrating the flow. Focus on assignments, conditionals, loop branches, and returns. Variables must reflect the state *after* the line executes. Ensure that all line numbers match the provided code snippet properly. DO NOT surround your JSON with \`\`\`json blocks. Return JSON directly.`;
-}
+Rules: line numbers are 1-indexed. Variables reflect state AFTER the line executes. annotation explains WHY, not WHAT.`;
 
 async function handler(request) {
     try {
         const body = await request.json();
         const { code, language = "javascript" } = body;
 
-        if (!code) {
+        if (!code || !code.trim()) {
             return errorResponse("Source code is required.", 400);
         }
 
-        const prompt = buildTracerPrompt(code, language);
-        const rawText = await generateText(prompt);
+        // Cap input at 4000 chars — beyond this rarely adds meaningful trace frames
+        // and burns tokens fast on the free tier
+        const trimmedCode = code.length > 4000
+            ? code.slice(0, 4000) + "\n// ... (truncated for analysis)"
+            : code;
 
-        // Strip markdown backticks if Gemini includes them
-        const cleaned = rawText
-            .replace(/^```(?:json)?\s*/i, "")
-            .replace(/\s*```$/i, "")
-            .trim();
+        const userPrompt = `Trace this ${language} code:\n\`\`\`${language}\n${trimmedCode}\n\`\`\``;
+
+        const rawText = await generateStructured(SYSTEM_PROMPT, userPrompt, {
+            max_tokens: 1200,  // 10 frames × ~120 tokens = ~1200 worst case
+            temperature: 0.2,  // low temp = consistent JSON, less hallucination
+        });
 
         let parsed;
         try {
-            parsed = JSON.parse(cleaned);
+            parsed = JSON.parse(rawText);
         } catch (e) {
-            console.error("Failed to parse Gemini trace output:", cleaned.slice(0, 500));
-            return errorResponse("Gemini returned invalid JSON format.", 500);
+            console.error("Trace JSON parse failed:", rawText.slice(0, 300));
+            return errorResponse("AI returned an invalid response. Please try again.", 500);
+        }
+
+        if (!parsed.frames || !Array.isArray(parsed.frames)) {
+            return errorResponse("AI response missing required 'frames' array.", 500);
         }
 
         return successResponse(parsed);
     } catch (error) {
-        console.error("Gemini trace error:", error);
+        console.error("Trace route error:", error);
         return errorResponse("Failed to generate execution trace.", 500);
     }
 }

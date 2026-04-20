@@ -50,7 +50,8 @@ export function useGenerateDiagram() {
     return useMutation({
         mutationFn: async ({ code, language }) => {
             const res = await axios.post("/api/diagram/generate", { code, language });
-            return res.data.data.diagrams;
+            // Return full payload so callers can access summary, usedAI, aiJson, metadata
+            return res.data.data;
         },
     });
 }
