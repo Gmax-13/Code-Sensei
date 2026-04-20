@@ -125,6 +125,24 @@ main();`);
         }
     }, []);
 
+    /**
+     * Track whether the mermaid diagram rendered successfully.
+     * Used to hide the React-managed placeholder text once innerHTML takes over.
+     *
+     * BUG FIX (removeChild error):
+     * Previously, a React-managed placeholder <div> lived inside the mermaidRef
+     * container. When renderDiagram() ran `innerHTML = ""`, it destroyed that
+     * React-managed node. On the next reconciliation, React called
+     * `removeChild(placeholder)` on mermaidRef — but the placeholder was already
+     * gone, causing: "Failed to execute 'removeChild' on 'Node'".
+     *
+     * Fix: The mermaidRef container now renders with NO React children.
+     * The placeholder is rendered as a sibling (outside the ref) and is
+     * hidden via this state flag once mermaid takes over.
+     */
+    const [diagramRendered, setDiagramRendered] = useState(false);
+    const [renderError, setRenderError] = useState(null);
+
     /** Re-render the mermaid diagram whenever the active diagram changes */
     const renderDiagram = useCallback(async () => {
         if (!mermaidReady || !diagrams || rawMode) return;
@@ -134,25 +152,26 @@ main();`);
 
         try {
             const mermaid = (await import("mermaid")).default;
-            // Clear previous content
+            // Clear previous content — safe because mermaidRef has NO React children
             mermaidRef.current.innerHTML = "";
             // Generate a unique ID for the diagram
             const id = `mermaid-${Date.now()}`;
             const { svg } = await mermaid.render(id, diagramCode);
             mermaidRef.current.innerHTML = svg;
+            setDiagramRendered(true);
+            setRenderError(null);
         } catch (err) {
             console.error("Mermaid render error:", err);
-            // Show the raw code on render failure
-            mermaidRef.current.innerHTML = `
-        <div class="text-red-400 text-sm p-4">
-          <p class="font-bold mb-2">Diagram render failed</p>
-          <pre class="bg-gray-900 p-3 rounded text-xs overflow-x-auto">${diagramCode}</pre>
-        </div>
-      `;
+            // Store error in state instead of using innerHTML with React children
+            setRenderError(diagramCode);
+            setDiagramRendered(false);
         }
     }, [mermaidReady, diagrams, activeDiagram, rawMode]);
 
     useEffect(() => {
+        // Reset render state when switching diagrams or toggling raw mode
+        setDiagramRendered(false);
+        setRenderError(null);
         renderDiagram();
     }, [renderDiagram]);
 
@@ -320,7 +339,19 @@ main();`);
                         </div>
                     )}
 
-                    {/* Diagram rendering area */}
+                    {/*
+                      * Diagram rendering area
+                      *
+                      * BUG FIX (removeChild error):
+                      * The mermaidRef container MUST NOT contain React-managed children.
+                      * Mermaid rendering uses innerHTML to inject SVG, which destroys
+                      * any existing DOM children. If React had tracked those children,
+                      * it would later try removeChild() on nodes that no longer exist.
+                      *
+                      * Solution: Placeholder and error UI are rendered as SIBLINGS
+                      * (outside/before the ref div), controlled via React state flags.
+                      * The ref div is always empty from React's perspective.
+                      */}
                     {rawMode ? (
                         /* Raw Mermaid code view */
                         <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
@@ -329,12 +360,29 @@ main();`);
                             </pre>
                         </div>
                     ) : (
-                        /* Rendered Mermaid diagram */
-                        <div
-                            ref={mermaidRef}
-                            className="min-h-[200px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 rounded-lg p-4 overflow-x-auto"
-                        >
-                            <div className="text-gray-400 text-sm">Rendering diagram...</div>
+                        <div className="min-h-[200px] bg-gray-50 dark:bg-gray-900 rounded-lg p-4 overflow-x-auto relative">
+                            {/* Placeholder — shown until mermaid renders successfully */}
+                            {!diagramRendered && !renderError && (
+                                <div className="flex items-center justify-center min-h-[200px]">
+                                    <div className="text-gray-400 text-sm">Rendering diagram...</div>
+                                </div>
+                            )}
+
+                            {/* Error fallback — rendered via React state, not innerHTML */}
+                            {renderError && (
+                                <div className="text-red-400 text-sm p-4">
+                                    <p className="font-bold mb-2">Diagram render failed</p>
+                                    <pre className="bg-gray-900 p-3 rounded text-xs overflow-x-auto">{renderError}</pre>
+                                </div>
+                            )}
+
+                            {/*
+                              * Mermaid output container — NO React children allowed.
+                              * innerHTML is used by mermaid.render() to inject SVG here.
+                              * Keeping this empty ensures React won't call removeChild
+                              * on nodes it doesn't own.
+                              */}
+                            <div ref={mermaidRef} />
                         </div>
                     )}
 

@@ -3,40 +3,42 @@
  * ----------------
  * Provides global sidebar state (collapsed/expanded) with localStorage persistence.
  * Used by Sidebar, DashboardLayout, and any component needing sidebar state.
+ *
+ * BUG FIX (hydration mismatch):
+ * Previously, isCollapsed was initialized from localStorage during render via
+ * `useState(stored === "true")`. On the server, `stored` is always "false",
+ * but on the client it could be "true" from localStorage — causing a hydration
+ * mismatch that leads to DOM reconciliation errors (removeChild failures).
+ *
+ * Fix: Initialize isCollapsed as `false` (matching SSR), then sync the real
+ * value from localStorage in a useEffect that runs after hydration completes.
+ * A `mounted` flag tracks when the client-side sync is done, allowing
+ * dependent components (e.g., Sidebar) to delay rendering until state is stable.
  */
 
 "use client";
 
-import { createContext, useContext, useSyncExternalStore, useCallback, useState } from "react";
+import { createContext, useContext, useCallback, useState, useEffect } from "react";
 
 const SidebarContext = createContext(null);
 
 const STORAGE_KEY = "codesensei-sidebar-collapsed";
 
-/** Custom hook to read sidebar state from localStorage with SSR support */
-function useSidebarStorage() {
-    const getSnapshot = () => {
-        if (typeof window === "undefined") return "false";
-        return localStorage.getItem(STORAGE_KEY) ?? "false";
-    };
-
-    const getServerSnapshot = () => "false";
-
-    const subscribe = (callback) => {
-        const handleStorage = (e) => {
-            if (e.key === STORAGE_KEY) callback();
-        };
-        window.addEventListener("storage", handleStorage);
-        return () => window.removeEventListener("storage", handleStorage);
-    };
-
-    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-}
-
 export function SidebarProvider({ children }) {
-    const stored = useSidebarStorage();
-    const [isCollapsed, setIsCollapsed] = useState(stored === "true");
+    // Always initialize as false to match server render (hydration safety)
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    // Track when client-side localStorage sync is complete
+    const [mounted, setMounted] = useState(false);
+
+    // Sync collapsed state from localStorage AFTER hydration
+    useEffect(() => {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored === "true") {
+            setIsCollapsed(true);
+        }
+        setMounted(true);
+    }, []);
 
     // Persist state changes to localStorage
     const toggleCollapse = useCallback(() => {
@@ -61,7 +63,7 @@ export function SidebarProvider({ children }) {
         toggleCollapse,
         toggleMobile,
         closeMobile,
-        mounted: true,
+        mounted,
     };
 
     return (
